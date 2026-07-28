@@ -10,6 +10,7 @@ Configuration comes from the environment. See .env.example.
 
 __version__ = "1.0.0"
 
+import concurrent.futures
 import json
 import os
 import random
@@ -198,32 +199,92 @@ def setup_check(pin_id):
     return {"token": token} if token else {"pending": True}
 
 
+def probe(base, timeout=2.5):
+    """
+    Can we actually reach this address? /identity needs no token and returns
+    the server's machine ID, which also confirms we found the right server.
+
+    Plex advertises whatever addresses the server can see on itself. When it
+    runs in Docker that includes the container's bridge IP, which is flagged
+    "local" but is unreachable from anywhere else — so trusting the flag
+    instead of testing is how you end up pointed at 172.17.0.2.
+    """
+    try:
+        req = urllib.request.Request(f"{base}/identity",
+                                     headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            c = json.loads(r.read().decode("utf-8")).get("MediaContainer", {})
+        return c.get("machineIdentifier") or "unknown"
+    except Exception:
+        return None
+
+
+def probe_all(conns):
+    """Test every candidate at once rather than serially."""
+    if not conns:
+        return
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(conns))) as pool:
+        futures = {pool.submit(probe, c["url"]): c for c in conns}
+        for f in concurrent.futures.as_completed(futures, timeout=12):
+            c = futures[f]
+            try:
+                c["machine"] = f.result()
+            except Exception:
+                c["machine"] = None
+            c["reachable"] = c["machine"] is not None
+
+
 def setup_servers(token):
-    """Every Plex Media Server this account can reach."""
-    out = []
+    """
+    Every Plex Media Server this account knows about, with each advertised
+    address tested from this machine so the caller can pick one that works.
+    """
+    out, flat = [], []
     for res in plextv("/resources", {"includeHttps": 1, "includeRelay": 0}, token=token):
         if "server" not in (res.get("provides") or ""):
             continue
         conns = []
         for c in res.get("connections") or []:
-            if c.get("relay"):
+            if c.get("relay") or not c.get("address"):
                 continue
-            conns.append({
+            https = c.get("protocol") == "https"
+            conn = {
                 "address": c.get("address"),
-                "port": c.get("port"),
-                "https": c.get("protocol") == "https",
+                "port": c.get("port") or 32400,
+                "https": https,
                 "local": bool(c.get("local")),
-            })
-        # A wall display should talk to the server over the LAN, not the internet
-        conns.sort(key=lambda c: (not c["local"], c["https"]))
+                "reachable": None,
+                "machine": None,
+            }
+            conn["url"] = f"{'https' if https else 'http'}://{conn['address']}:{conn['port']}"
+            conns.append(conn)
+            flat.append(conn)
         if conns:
             out.append({
                 "name": res.get("name"),
                 "owned": bool(res.get("owned")),
+                "id": res.get("clientIdentifier"),
                 "connections": conns,
             })
-    out.sort(key=lambda s: (not s["owned"], s["name"] or ""))
+
+    probe_all(flat)
+
+    for srv in out:
+        # Reachable first, then LAN, then plain http (cheaper for poster art)
+        srv["connections"].sort(
+            key=lambda c: (not c["reachable"], not c["local"], c["https"]))
+        srv["reachable"] = any(c["reachable"] for c in srv["connections"])
+        for c in srv["connections"]:
+            c.pop("url", None)
+
+    out.sort(key=lambda s: (not s["reachable"], not s["owned"], s["name"] or ""))
     return {"servers": out}
+
+
+def setup_probe(base):
+    """Test one address the caller typed in by hand."""
+    machine = probe(base)
+    return {"reachable": machine is not None, "machine": machine}
 
 
 def setup_libraries(base, token):
@@ -526,7 +587,7 @@ class Handler(BaseHTTPRequestHandler):
         if not CFG.setup:
             return self.send_error(404, "Setup helper is disabled")
 
-        if action not in ("pin", "check", "servers", "libraries", "players"):
+        if action not in ("pin", "check", "servers", "probe", "libraries", "players"):
             return self.send_error(404, "Not found")
 
         def one(k):
@@ -537,6 +598,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(setup_pin())
             if action == "check":
                 return self.send_json(setup_check(one("id")))
+
+            if action == "probe":
+                base = self.setup_base(one("host"), one("port"), one("https"))
+                if base is None:
+                    return self.send_error(400, "Bad server address")
+                return self.send_json(setup_probe(base))
 
             token = one("token")
             if not token:
@@ -551,12 +618,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(setup_libraries(base, token))
             return self.send_json(setup_players(base, token))
         except urllib.error.HTTPError as e:
-            return self.send_error(502, f"plex.tv said {e.code}")
+            if e.code in (401, 403):
+                return self.send_error(502, "Plex rejected the token")
+            return self.send_error(502, f"Plex said {e.code}")
         except ValueError:
             return self.send_error(400, "Bad parameter")
+        except (TimeoutError, urllib.error.URLError, OSError) as e:
+            log(f"setup {action}: {e}")
+            # By far the most common cause: an address Plex advertised that
+            # isn't reachable from here, e.g. a Docker bridge IP.
+            return self.send_error(
+                502, "Could not reach that address from this machine. "
+                     "Pick a different one, or enter your server's LAN address.")
         except Exception as e:
             log(f"setup {action}: {e}")
-            return self.send_error(502, "Could not reach Plex")
+            return self.send_error(502, "Something went wrong talking to Plex")
 
     @staticmethod
     def setup_base(host, port, https):

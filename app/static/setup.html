@@ -60,6 +60,9 @@ a{color:var(--tungsten)}
 .opt:hover{border-color:#4a515b}
 .opt.sel{border-color:var(--tungsten);background:#241f16}
 .opt small{display:block;color:var(--dim);font-weight:400;font-size:.8rem;margin-top:.1rem}
+.opt.dead{opacity:.5}
+.opt .tag.bad{color:var(--bad);background:#2b1a17}
+.opt em{color:var(--dim);font-style:normal;font-size:.85rem}
 .opt .tag{
   float:right;font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;
   color:var(--tungsten);border:1px solid #45392200;background:#2e2616;
@@ -186,25 +189,84 @@ input[type=text]{
     try {
       const { servers } = await api('servers', { token: state.token });
       if (!servers.length) return fail('s2body', 'No servers on this account.');
-      $('s2body').innerHTML = servers.map((s, i) => `
-        <button class="opt" data-i="${i}">
-          ${s.owned ? '<span class="tag">yours</span>' : ''}
-          ${esc(s.name)}
-          <small>${esc(s.connections[0].address)}:${s.connections[0].port}${
-            s.connections[0].local ? ' · local' : ' · remote'}</small>
-        </button>`).join('');
+
+      // One row per address, not per server. Plex advertises every address the
+      // server can see on itself — including a Docker bridge IP that nothing
+      // else can reach — so each one is tested from here and labelled.
+      const rows = [];
+      servers.forEach(srv => srv.connections.forEach(c => rows.push({ srv, c })));
+
+      $('s2body').innerHTML = rows.map((r, i) => `
+        <button class="opt${r.c.reachable ? '' : ' dead'}" data-i="${i}">
+          ${r.c.reachable ? '<span class="tag">reachable</span>'
+                          : '<span class="tag bad">no answer</span>'}
+          ${esc(r.srv.name)}${r.srv.owned ? '' : ' <em>(shared)</em>'}
+          <small>${esc(r.c.address)}:${r.c.port}${r.c.https ? ' · https' : ''}${
+            r.c.local ? ' · local' : ' · remote'}</small>
+        </button>`).join('') + manualServer();
+
       $('s2body').querySelectorAll('.opt').forEach(b => {
-        b.onclick = () => pickServer(servers[+b.dataset.i], b);
+        b.onclick = () => {
+          const r = rows[+b.dataset.i];
+          if (!r.c.reachable && !confirm(
+              'Bijou could not reach that address. Use it anyway?')) return;
+          pickServer(r.srv, r.c, b);
+        };
       });
+      wireManualServer();
+
+      if (!rows.some(r => r.c.reachable)) {
+        $('s2body').insertAdjacentHTML('afterbegin', `
+          <div class="warn">None of the addresses Plex advertised answered from
+          this machine. That usually means Plex is in Docker without host
+          networking — it only knows its container IP. Enter your server's real
+          LAN address below, and consider setting
+          <b>Settings → Network → Custom server access URLs</b> in Plex.</div>`);
+      }
     } catch (e) { fail('s2body', e); }
   }
 
+  function manualServer() {
+    return `
+      <label for="mhost">Or enter the address yourself</label>
+      <div class="row">
+        <input type="text" id="mhost" placeholder="172.20.24.237" style="flex:1 1 12rem">
+        <input type="text" id="mport" placeholder="32400" value="32400" style="width:6rem">
+        <button class="ghost" id="mtest">Test</button>
+      </div>
+      <p class="hint" id="mresult"></p>`;
+  }
+
+  function wireManualServer() {
+    $('mtest').onclick = async () => {
+      const host = $('mhost').value.trim();
+      const port = $('mport').value.trim() || '32400';
+      if (!host) return;
+      $('mtest').disabled = true;
+      $('mresult').innerHTML = '<span class="spin"></span>Testing…';
+      try {
+        const d = await api('probe', { host, port, https: '0' });
+        if (d.reachable) {
+          $('mresult').innerHTML = '<span style="color:var(--ok)">Reachable.</span>';
+          pickServer({ name: host, owned: true },
+                     { address: host, port: +port, https: false, local: true }, null);
+        } else {
+          $('mresult').innerHTML =
+            '<span style="color:var(--bad)">No answer on that address.</span>';
+        }
+      } catch (e) {
+        $('mresult').innerHTML = `<span style="color:var(--bad)">${esc(e.message || e)}</span>`;
+      }
+      $('mtest').disabled = false;
+    };
+  }
+
   // ── 2. Server ───────────────────────────────────────────────────
-  async function pickServer(srv, btn) {
+  async function pickServer(srv, conn, btn) {
     $('s2body').querySelectorAll('.opt').forEach(b => b.classList.remove('sel'));
-    btn.classList.add('sel');
+    if (btn) btn.classList.add('sel');
     state.server = srv;
-    state.conn = srv.connections[0];
+    state.conn = conn;
     step(2, 'done'); step(3, 'on'); step(4, 'on');
 
     const args = {
