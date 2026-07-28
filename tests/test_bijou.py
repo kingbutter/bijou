@@ -6,6 +6,7 @@ Tests for the poster server. Standard library only — run with:
 
 import json
 import os
+import re
 import socket
 import sys
 import threading
@@ -380,14 +381,64 @@ class TestSetupHelper(PosterTestCase):
         _, d = self.s("check", id=4242)
         self.assertEqual(d["token"], TOKEN)
 
-    def test_servers_prefers_local_and_drops_relay(self):
+    def test_servers_drops_relay(self):
         _, d = self.s("servers", token=TOKEN)
-        names = [s["name"] for s in d["servers"]]
-        self.assertEqual(names[0], "Basement", "owned servers should sort first")
-        first = d["servers"][0]["connections"][0]
-        self.assertTrue(first["local"], "a wall display should use the LAN address")
         addrs = [c["address"] for c in d["servers"][0]["connections"]]
         self.assertNotIn("relay.plex.direct", addrs, "relay is far too slow for art")
+
+    def test_reachable_address_wins_over_docker_bridge(self):
+        # The regression this exists for: Plex in Docker advertises its bridge
+        # IP flagged local, so sorting on the flag picked an unusable address.
+        _, d = self.s("servers", token=TOKEN)
+        srv = next(s for s in d["servers"] if s["name"] == "Basement")
+        first = srv["connections"][0]
+        self.assertTrue(first["reachable"])
+        self.assertEqual(first["address"], "127.0.0.1")
+
+        bridge = next(c for c in srv["connections"] if c["address"] == "172.17.0.2")
+        self.assertTrue(bridge["local"], "Plex really does call it local")
+        self.assertFalse(bridge["reachable"], "but it must be marked unreachable")
+
+    def test_every_address_is_offered(self):
+        # The page lets you choose, so none may be silently dropped
+        _, d = self.s("servers", token=TOKEN)
+        addrs = [c["address"] for c in d["servers"][0]["connections"]]
+        self.assertIn("172.17.0.2", addrs)
+        self.assertIn("1.2.3.4", addrs)
+        self.assertIn("127.0.0.1", addrs)
+
+    def test_server_reports_overall_reachability(self):
+        _, d = self.s("servers", token=TOKEN)
+        self.assertTrue(next(s for s in d["servers"]
+                             if s["name"] == "Basement")["reachable"])
+        self.assertFalse(next(s for s in d["servers"]
+                              if s["name"] == "A Friend")["reachable"])
+
+    def test_reachable_servers_sort_first(self):
+        _, d = self.s("servers", token=TOKEN)
+        self.assertEqual(d["servers"][0]["name"], "Basement")
+
+    def test_probe_confirms_a_typed_address(self):
+        _, d = self.s("probe", host="127.0.0.1", port=self.plex.port, https="0")
+        self.assertTrue(d["reachable"])
+        self.assertEqual(d["machine"], "basement-machine-id")
+
+    def test_probe_rejects_a_dead_address(self):
+        _, d = self.s("probe", host="127.0.0.1", port=9, https="0")
+        self.assertFalse(d["reachable"])
+
+    def test_probe_needs_no_token(self):
+        status, _, _ = get(f"{self.base}/api/setup/probe?"
+                           + urllib.parse.urlencode(
+                               {"host": "127.0.0.1", "port": self.plex.port}))
+        self.assertEqual(status, 200)
+
+    def test_unreachable_address_gives_a_useful_error(self):
+        status, body, _ = get(f"{self.base}/api/setup/libraries?"
+                              + urllib.parse.urlencode(
+                                  {"token": TOKEN, "host": "127.0.0.1", "port": 9}))
+        self.assertEqual(status, 502)
+        self.assertIn(b"Could not reach", body)
 
     def test_servers_excludes_players(self):
         _, d = self.s("servers", token=TOKEN)
@@ -526,6 +577,54 @@ class TestUnconfigured(unittest.TestCase):
         # idle rather than hammer a default host every few seconds.
         time.sleep(1.2)
         self.assertEqual(len(self.bijou.STATE.queue), 0)
+
+
+class TestMarkup(unittest.TestCase):
+    """
+    Guards against a class of bug that is invisible until it reaches a wall:
+    markup and CSS drifting apart. A global rename once turned class="poster"
+    into class="bijou", which silently unstyled the poster layers — demo mode
+    still looked fine because it injects an <svg> that renders on its own.
+    """
+
+    STATIC = Path(__file__).resolve().parents[1] / "app" / "static"
+
+    @staticmethod
+    def split(src):
+        css = re.search(r"<style>(.*?)</style>", src, re.S).group(1)
+        # Drop <script> blocks so JS template literals don't look like markup
+        body = re.sub(r"<script>.*?</script>", "", src[src.index("</style>"):], flags=re.S)
+        return css, body
+
+    def test_every_class_in_markup_has_a_rule(self):
+        for name in ("index.html", "setup.html"):
+            src = (self.STATIC / name).read_text()
+            css, body = self.split(src)
+            used = set()
+            for m in re.finditer(r'class="([^"{}$]+)"', body):
+                used.update(m.group(1).split())
+            defined = set(re.findall(r"\.([a-zA-Z][\w-]*)", css))
+            orphans = sorted(used - defined)
+            self.assertEqual(orphans, [], f"{name}: styled by nothing -> {orphans}")
+
+    def test_poster_layers_are_present_and_styled(self):
+        src = (self.STATIC / "index.html").read_text()
+        css, body = self.split(src)
+        for pid in ("pa", "pb"):
+            self.assertRegex(
+                body, rf'<div class="poster" id="{pid}">',
+                f"#{pid} must carry class=poster or it gets no positioning")
+        for rule in (".poster{", ".poster.live{"):
+            self.assertIn(rule, css.replace(" ", ""))
+
+    def test_ids_the_script_reaches_for_all_exist(self):
+        src = (self.STATIC / "index.html").read_text()
+        _, body = self.split(src)
+        script = re.search(r"<script>(.*?)</script>", src, re.S).group(1)
+        wanted = set(re.findall(r"\$\('([a-zA-Z][\w-]*)'\)", script))
+        present = set(re.findall(r'id="([^"]+)"', body))
+        self.assertEqual(sorted(wanted - present), [],
+                         "the script looks up ids that are not in the markup")
 
 
 class TestArtCache(unittest.TestCase):
