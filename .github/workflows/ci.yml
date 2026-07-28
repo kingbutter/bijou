@@ -1,0 +1,142 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Oldest supported through current. 3.9 is what Debian 12 ships.
+        python: ["3.9", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Check the page parses
+        run: |
+          python - <<'PY'
+          import re, pathlib, html.parser
+          for name in ("index.html", "setup.html"):
+              src = pathlib.Path("app/static", name).read_text()
+              css = re.search(r"<style>(.*?)</style>", src, re.S).group(1)
+              assert css.count("{") == css.count("}"), f"unbalanced CSS braces in {name}"
+              class P(html.parser.HTMLParser): pass
+              P().feed(src)
+              assert "localStorage" not in src, "browser storage is not available here"
+              print(name, "OK")
+          PY
+
+      - name: Demo posters match their generator
+        run: |
+          python3 - <<'PY'
+          import pathlib, subprocess
+          gen = subprocess.run(["python3", "tools/gen_posters.py"],
+                               capture_output=True, text=True, check=True).stdout.rstrip("\n")
+          page = pathlib.Path("app/static/index.html").read_text()
+          i = page.index("  const DEMO_POSTERS = [")
+          j = page.index("\n  ];", i) + len("\n  ];")
+          assert page[i:j] == gen, "index.html is out of sync with tools/gen_posters.py"
+          print("demo posters in sync")
+          PY
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install ruff
+      - run: ruff check app tests
+      - name: Shellcheck the deploy scripts
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          shellcheck deploy/*.sh
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make sure no Plex token got committed
+        run: |
+          # Plex tokens are 20 chars of base64ish. Catch an assignment with a
+          # value, while allowing the empty one in the example file.
+          if grep -rInE "(PLEX_TOKEN|X-Plex-Token)\s*[=:]\s*['\"]?[A-Za-z0-9_-]{15,}" \
+               --exclude-dir=.git . ; then
+            echo "::error::a Plex token looks committed above"
+            exit 1
+          fi
+          echo "clean"
+
+  build:
+    needs: [test, lint, secrets]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test the image
+        run: |
+          docker build -t bijou:test .
+          docker run -d --name smoke -p 18080:8080 \
+            -e PLEX_HOST=127.0.0.1 -e PLEX_TOKEN=dummy bijou:test
+          for i in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:18080/ >/dev/null 2>&1; then
+              echo "serving OK"
+              curl -sS http://127.0.0.1:18080/healthz
+              docker rm -f smoke
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "image did not come up"; docker logs smoke; exit 1

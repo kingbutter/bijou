@@ -1,0 +1,56 @@
+[Unit]
+Description=Bijou kiosk browser
+Documentation=https://github.com/OWNER/bijou
+After=bijou.service systemd-user-sessions.service getty@tty1.service
+Wants=bijou.service
+
+# getty owns tty1 on a stock Debian install. Without this the two fight over
+# the VT and cage exits as soon as it loses it.
+Conflicts=getty@tty1.service
+
+[Service]
+Type=simple
+User=kiosk
+PAMName=login
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+StandardInput=tty-fail
+StandardOutput=journal
+StandardError=journal
+
+# Rotation is done by the page (?rotate=90), not by cage. Intel graphics
+# frequently hand you a black screen on cage's -r because rotated scanout
+# needs a plane configuration the driver won't always give up.
+#
+# If you would rather rotate in the compositor, drop ?rotate=90 from the URL,
+# put -r back on cage, and try one of these one at a time:
+#   Environment=WLR_DRM_NO_ATOMIC=1
+#   Environment=WLR_DRM_NO_MODIFIERS=1
+#   Environment=WLR_RENDERER=pixman
+#
+# Add -d to cage for debug logging when something isn't coming up.
+ExecStart=/usr/bin/cage -- /usr/bin/chromium \
+  --kiosk \
+  --ozone-platform=wayland \
+  --user-data-dir=/home/kiosk/.chromium-kiosk \
+  --no-first-run \
+  --noerrdialogs \
+  --disable-infobars \
+  --disable-session-crashed-bubble \
+  --disable-features=Translate \
+  --disable-pinch \
+  --overscroll-history-navigation=0 \
+  --password-store=basic \
+  --check-for-update-interval=31536000 \
+  --autoplay-policy=no-user-gesture-required \
+  'http://127.0.0.1:8080/?rotate=90'
+
+Restart=always
+RestartSec=5
+
+# Don't let a restart loop hammer the box or trip the start limit
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target

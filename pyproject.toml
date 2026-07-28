@@ -1,0 +1,27 @@
+[project]
+name = "bijou"
+version = "1.0.0"
+description = "An illuminated Plex movie poster display"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+# No dependencies. That is the point.
+dependencies = []
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+# Pinned explicitly so a new ruff release doesn't turn CI red on its own.
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF"]
+ignore = [
+  # The polling loops must survive anything Plex or the network throws at
+  # them; dying on an unexpected exception would take the display down.
+  "BLE001",
+  # Long URLs and comments in the deploy notes
+  "E501",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["RUF012"]   # unittest class attributes are the idiomatic style

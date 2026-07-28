@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bijou</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700;800&family=Saira+Condensed:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* To run with no internet, delete the three <link> tags above, put the woff2
+   files in fonts/, and uncomment this block. See fonts/README.txt.
+@font-face{font-family:'Big Shoulders Display';src:url('/fonts/big-shoulders.woff2') format('woff2');
+           font-weight:500 800;font-display:swap}
+@font-face{font-family:'Saira Condensed';src:url('/fonts/saira-condensed.woff2') format('woff2');
+           font-weight:400 600;font-display:swap}
+*/
+:root{
+  --void:        #05060a;
+  --chrome-hi:   #c8cdd6;
+  --chrome-lo:   #3d434b;
+  --chrome-deep: #1a1d22;
+  --tungsten:    #ffc46b;
+  --filament:    #fff3d4;
+  --ember:       #6b4a22;
+  --enamel-red:  #8e1b22;
+  --paper:       #e9e3d6;
+
+  --chase-dur: 5.2s;   /* full lap of the bulb chase */
+  --chase-step: -0.16s;/* per-bulb offset; sets how many run at once */
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+
+html,body{
+  height:100%;
+  background:var(--void);
+  overflow:hidden;
+  cursor:none;
+  -webkit-user-select:none;user-select:none;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* Faint pool of light on the wall behind the case */
+body::before{
+  content:"";position:fixed;inset:0;
+  background:radial-gradient(60% 45% at 50% 46%, rgba(255,196,107,.10), transparent 70%);
+  pointer-events:none;
+}
+
+#stage{height:100%;display:block}
+@keyframes drift{from{transform:translate(-3px,-3px)}to{transform:translate(3px,3px)}}
+
+/* ── Rotation ─────────────────────────────────────────────────────────
+   Set with ?rotate=90|180|270 on the URL. Doing it here rather than in the
+   compositor keeps the display off the driver's rotated-scanout path, which
+   is where Intel graphics tend to hand you a black screen. */
+html[data-rot="90"] #stage,
+html[data-rot="270"] #stage{
+  position:absolute;top:0;left:0;
+  width:100vh;height:100vw;
+  transform-origin:top left;
+}
+html[data-rot="90"]  #stage{transform:translateX(100vw) rotate(90deg)}
+html[data-rot="270"] #stage{transform:translateY(100vh) rotate(-90deg)}
+html[data-rot="180"] #stage{transform:rotate(180deg)}
+
+/* ── The case ─────────────────────────────────────────────────────── */
+.case{
+  --w: 100vw;
+  /* Deliberately 8px larger than the screen with a matching negative margin,
+     so the slow drift below never exposes a black edge. */
+  width:calc(100% + 8px);
+  height:calc(100% + 8px);
+  margin:-4px;
+  /* Slow drift so a fixed image never sits on the same pixels for years */
+  animation:drift 1200s ease-in-out infinite alternate;
+  font-size:calc(var(--w)/30);
+  position:relative;
+  display:flex;
+  padding:1.9em;
+  background:
+    linear-gradient(160deg,#20242b 0%,#0d0f13 28%,#171a20 52%,#0b0d11 74%,#22262d 100%);
+  box-shadow:
+    inset 0 0 0 .09em rgba(200,205,214,.34),
+    inset 0 .12em .3em rgba(255,255,255,.10),
+    inset 0 -.12em .3em rgba(0,0,0,.7),
+    0 1.4em 3.5em rgba(0,0,0,.85);
+}
+
+html[data-rot="90"] .case,
+html[data-rot="270"] .case{--w: 100vh}
+
+/* Chrome bezel that holds the glass */
+.inner{
+  position:relative;
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+  border-radius:.18em;
+  padding:.42em;
+  background:linear-gradient(180deg,var(--chrome-hi),var(--chrome-lo) 42%,var(--chrome-deep));
+  box-shadow:0 .1em .5em rgba(0,0,0,.8), inset 0 0 .2em rgba(255,255,255,.25);
+  overflow:hidden;
+}
+
+/* Corner screws — the case is bolted to the wall */
+.screw{
+  position:absolute;width:.5em;height:.5em;border-radius:50%;
+  background:radial-gradient(circle at 34% 30%,#9aa1ab,#41464e 60%,#15171b);
+  box-shadow:0 .04em .08em rgba(0,0,0,.9), inset 0 0 .05em rgba(255,255,255,.5);
+}
+.screw::after{
+  content:"";position:absolute;inset:.16em .06em;
+  background:rgba(10,11,14,.85);border-radius:.02em;transform:rotate(28deg);
+}
+.screw.tl{top:.62em;left:.62em}.screw.tr{top:.62em;right:.62em}
+.screw.bl{bottom:.62em;left:.62em}.screw.br{bottom:.62em;right:.62em}
+
+/* ── Header plaque ────────────────────────────────────────────────── */
+.plaque{
+  position:relative;flex:1 0 2.9em;display:grid;place-items:center;
+  border-radius:.1em .1em 0 0;
+  background:linear-gradient(180deg,#15171c,#0a0b0e 55%,#101216);
+  box-shadow:inset 0 -.08em .25em rgba(0,0,0,.9), inset 0 .06em 0 rgba(255,255,255,.09);
+  transition:background .6s ease;
+  overflow:hidden;
+}
+.case[data-mode="now"] .plaque{
+  background:linear-gradient(180deg,#a8262e,var(--enamel-red) 55%,#5d1015);
+}
+.plaque .label{
+  font-family:'Big Shoulders Display','Haettenschweiler','Arial Narrow','DejaVu Sans Condensed',Impact,sans-serif;
+  font-weight:800;font-size:1.62em;letter-spacing:.34em;text-indent:.34em;
+  text-transform:uppercase;color:var(--tungsten);
+  text-shadow:0 0 .04em rgba(255,243,212,.9), 0 0 .5em rgba(255,196,107,.55), 0 .03em 0 rgba(0,0,0,.8);
+  transition:color .6s ease,text-shadow .6s ease;
+  white-space:nowrap;
+}
+.case[data-mode="now"] .plaque .label{
+  color:#fff6ea;
+  text-shadow:0 0 .04em #fff, 0 0 .55em rgba(255,214,214,.7), 0 .03em .02em rgba(0,0,0,.55);
+}
+/* thin tungsten strip lighting the plaque from below */
+.plaque::after{
+  content:"";position:absolute;left:6%;right:6%;bottom:0;height:.09em;
+  background:linear-gradient(90deg,transparent,var(--tungsten),transparent);
+  opacity:.55;
+}
+
+/* ── Glass + poster ───────────────────────────────────────────────── */
+.glass{
+  /* 2:3 so a standard one-sheet fills it exactly. It may shrink below that
+     on a squarish panel, in which case background-size:contain keeps the
+     poster in proportion. */
+  position:relative;flex:0 1 auto;aspect-ratio:2/3;min-height:0;overflow:hidden;
+  background:#050608;   /* backing board behind the sheet */
+}
+.poster{
+  position:absolute;inset:0;
+  background-size:contain;background-repeat:no-repeat;background-position:center;
+  opacity:0;transition:opacity .85s ease;
+}
+/* ?poster=fill crops the sheet to the glass instead of fitting it inside */
+html[data-poster="fill"] .poster{background-size:cover}
+/* Demo posters are inlined rather than set as a background image, so their
+   lettering can use the same webfonts as the rest of the case. */
+.poster svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+html[data-poster="fill"] .poster svg{object-fit:cover}
+.poster.live{opacity:1}
+
+/* Real reflection: a fixed diagonal sheet of light on the pane */
+.glass::before{
+  content:"";position:absolute;inset:0;z-index:3;pointer-events:none;
+  background:linear-gradient(107deg,
+    rgba(255,255,255,.13) 0%, rgba(255,255,255,.05) 17%,
+    transparent 30%, transparent 72%,
+    rgba(255,255,255,.035) 86%, rgba(255,255,255,.09) 100%);
+}
+/* Inside of the box is darker at the edges than the middle */
+.glass::after{
+  content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
+  box-shadow:inset 0 0 2.2em rgba(0,0,0,.65);
+  background:radial-gradient(120% 80% at 50% 8%, rgba(255,196,107,.11), transparent 55%);
+}
+
+/* Progress — only present while something is actually playing */
+.progress{
+  position:absolute;left:0;right:0;bottom:0;height:.22em;z-index:4;
+  background:rgba(0,0,0,.55);opacity:0;transition:opacity .5s ease;
+}
+.case[data-mode="now"] .progress{opacity:1}
+.progress i{
+  display:block;height:100%;width:0%;
+  background:linear-gradient(90deg,#ffb347,var(--filament));
+  box-shadow:0 0 .5em rgba(255,196,107,.9);
+  transition:width 1s linear;
+}
+
+/* ── Billing strip ────────────────────────────────────────────────── */
+.billing{
+  position:relative;flex:1 0 5em;padding:.5em 1em;
+  display:grid;align-content:center;justify-items:center;gap:.28em;text-align:center;
+  background:linear-gradient(180deg,#14161b,#090a0d);
+  box-shadow:inset 0 .07em 0 rgba(255,255,255,.08);
+}
+.title{
+  font-family:'Big Shoulders Display','Haettenschweiler','Arial Narrow','DejaVu Sans Condensed',Impact,sans-serif;
+  font-weight:700;font-size:1.32em;line-height:1;letter-spacing:.05em;
+  color:var(--paper);text-transform:uppercase;max-width:100%;
+  text-shadow:0 .03em .06em rgba(0,0,0,.9);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.meta{
+  font-family:'Saira Condensed','DejaVu Sans Condensed','Arial Narrow',sans-serif;
+  font-weight:400;font-size:.72em;letter-spacing:.24em;text-indent:.24em;
+  color:rgba(233,227,214,.52);text-transform:uppercase;white-space:nowrap;
+}
+.meta span+span::before{content:"·";margin:0 .7em;color:rgba(255,196,107,.55)}
+
+/* ── Bulbs ────────────────────────────────────────────────────────── */
+#bulbs{
+  position:absolute;inset:0;pointer-events:none;opacity:.92;
+  transition:opacity .4s ease, filter .4s ease;
+}
+.bulb{
+  position:absolute;width:.72em;height:.72em;margin:-.36em 0 0 -.36em;border-radius:50%;
+  background:radial-gradient(circle at 40% 34%, #3a2c17, var(--ember) 55%, #241708);
+  box-shadow:inset 0 0 .1em rgba(0,0,0,.9), 0 .03em .06em rgba(0,0,0,.6);
+}
+.bulb b{ /* the lit filament + its spill onto the frame */
+  position:absolute;inset:0;border-radius:50%;display:block;
+  background:radial-gradient(circle at 42% 36%, var(--filament) 0%, var(--tungsten) 42%, #b56a14 100%);
+  box-shadow:0 0 .35em .06em rgba(255,196,107,.95), 0 0 1.1em .2em rgba(255,168,60,.45);
+  opacity:0;
+  animation:lamp var(--chase-dur) linear infinite;
+  animation-delay:calc(var(--i) * var(--chase-step));
+}
+@keyframes lamp{
+  0%   {opacity:.14}
+  8%   {opacity:1}
+  26%  {opacity:.30}
+  100% {opacity:.14}
+}
+/* Faster, tighter run while a film is playing */
+.case[data-mode="now"]{--chase-dur:2.6s;--chase-step:-0.075s}
+
+/* Re-dressing the case: lamps dip, poster swaps, lamps surge back */
+.case.dim   #bulbs{opacity:.18}
+.case.surge #bulbs{opacity:1;filter:brightness(1.3) saturate(1.08)}
+
+@media (prefers-reduced-motion:reduce){
+  .bulb b{animation:none;opacity:.75}
+  .case{animation:none}
+}
+
+/* Shown only if Plex can't be reached */
+#fault{
+  position:absolute;left:0;right:0;bottom:.9em;z-index:5;text-align:center;
+  font-family:'Saira Condensed',sans-serif;font-size:.62em;letter-spacing:.2em;
+  color:rgba(255,120,100,.75);text-transform:uppercase;opacity:0;transition:opacity .4s;
+}
+#fault.on{opacity:1}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="case" id="case" data-mode="soon">
+    <div id="bulbs"></div>
+    <i class="screw tl"></i><i class="screw tr"></i><i class="screw bl"></i><i class="screw br"></i>
+
+    <div class="inner">
+      <div class="plaque"><div class="label" id="label">Coming Soon</div></div>
+
+      <div class="glass">
+        <div class="bijou" id="pa"></div>
+        <div class="bijou" id="pb"></div>
+        <div class="progress"><i id="bar"></i></div>
+        <div id="fault"></div>
+      </div>
+
+      <div class="billing">
+        <div class="title" id="title"></div>
+        <div class="meta" id="meta"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+  const API = '/api';
+
+  // ?rotate=90 turns the whole display a quarter turn. Do this first: the
+  // bulb layout measures the case, and rotation changes its size.
+  const spin = new URLSearchParams(location.search).get('rotate');
+  if (['90', '180', '270'].includes(spin)) document.documentElement.dataset.rot = spin;
+
+  // ?poster=fill crops to the glass; the default fits the whole sheet in
+  const fitMode = new URLSearchParams(location.search).get('poster');
+  if (fitMode === 'fill') document.documentElement.dataset.poster = 'fill';
+
+  const $ = id => document.getElementById(id);
+  const caseEl = $('case');
+
+  let queue = [], qi = 0, rotateMs = 30000, pollMs = 5000, queueMs = 1800000;
+  let currentKey = null, layer = 0;
+  let rotateTimer = null, prog = null;
+
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+
+  async function api(action, params = {}) {
+    const q = new URLSearchParams(params);
+    const r = await fetch(`${API}/${action}?${q}`, { cache: 'no-store' });
+    if (!r.ok) throw new Error(r.status);
+    return r.json();
+  }
+
+  const artUrl = thumb => demo ? thumb : `${API}/art?k=${encodeURIComponent(thumb)}`;
+
+  // ?demo=1 — check the frame, fonts and sizing on the panel before Plex
+  // is wired up. Placeholder posters are drawn locally.
+  const demo = new URLSearchParams(location.search).has('demo');
+
+  // Six original posters, drawn as SVG so the demo needs no network and no
+  // Plex. Generated by tools/gen_posters.py.
+  const DEMO_POSTERS = [
+    {t:"The Spiral", m:["1958", "NR", "1h 42m"], s:"<svg preserveAspectRatio=\"xMidYMid meet\" viewBox=\"0 0 200 300\"> <defs> <linearGradient id=\"sky\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"> <stop offset=\"0\" stop-color=\"#1b0b0b\"/><stop offset=\"1\" stop-color=\"#000\"/> </linearGradient> <radialGradient id=\"glow\" cx=\"50%\" cy=\"42%\" r=\"55%\"> <stop offset=\"0\" stop-color=\"#e8452c\" stop-opacity=\".95\"/> <stop offset=\"1\" stop-color=\"#e8452c\" stop-opacity=\"0\"/> </radialGradient> </defs> <rect width=\"200\" height=\"300\" fill=\"url(#sky)\"/> <rect width=\"200\" height=\"300\" fill=\"url(#glow)\" opacity=\".55\"/> <path d=\"M102.2 130.0 L102.2 130.3 L102.2 130.6 L102.1 130.9 L102.0 131.3 L101.8 131.6 L101.6 131.8 L101.4 132.1 L101.1 132.3 L100.8 132.5 L100.5 132.6 L100.1 132.7 L99.7 132.7 L99.3 132.7 L98.9 132.7 L98.5 132.5 L98.2 132.3 L97.8 132.1 L97.5 131.8 L97.2 131.5 L97.0 131.1 L96.8 130.7 L96.7 130.2 L96.6 129.7 L96.6 129.2 L96.7 128.8 L96.8 128.3 L97.1 127.8 L97.3 127.4 L97.7 127.0 L98.1 126.6 L98.6 126.3 L99.1 126.1 L99.6 125.9 L100.2 125.8 L100.8 125.8 L101.4 125.9 L102.0 126.0 L102.6 126.3 L103.1 126.6 L103.6 127.0 L104.1 127.5 L104.5 128.1 L104.8 128.7 L105.0 129.4 L105.1 130.1 L105.2 130.8 L105.1 131.6 L104.9 132.3 L104.7 133.0 L104.3 133.7 L103.8 134.4 L103.2 134.9 L102.5 135.4 L101.8 135.8 L101.0 136.1 L100.1 136.3 L99.2 136.4 L98.3 136.4 L97.3 136.2 L96.4 135.8 L95.6 135.4 L94.8 134.8 L94.0 134.1 L93.4 133.3 L92.9 132.4 L92.5 131.4 L92.2 130.3 L92.1 129.2 L92.1 128.1 L92.3 127.0 L92.7 125.9 L93.2 124.8 L93.9 123.8 L94.7 122.8 L95.7 122.0 L96.8 121.3 L98.0 120.8 L99.3 120.4 L100.6 120.2 L102.0 120.2 L103.4 120.4 L104.8 120.8 L106.2 121.4 L107.4 122.2 L108.6 123.2 L109.7 124.4 L110.6 125.7 L111.3 127.2 L111.8 128.7 L112.0 130.4 L112.1 132.1 L111.9 133.9 L111.5 135.6 L110.8 137.3 L109.8 138.9 L108.7 140.4 L107.3 141.7 L105.7 142.8 L103.9 143.7 L102.0 144.4 L100.0 144.8 L97.8 145.0 L95.7 144.8 L93.6 144.3 L91.5 143.5 L89.5 142.4 L87.6 141.1 L85.9 139.4 L84.4 137.5 L83.2 135.3 L82.3 133.0 L81.7 130.5 L81.5 127.9 L81.6 125.3 L82.1 122.6 L83.0 120.0 L84.3 117.5 L85.9 115.1 L87.9 113.0 L90.2 111.1 L92.8 109.6 L95.6 108.4 L98.7 107.5 L101.9 107.2 L105.1 107.2 L108.4 107.7 L111.7 108.7 L114.8 110.2 L117.7 112.1 L120.4 114.5 L122.8 117.2 L124.9 120.4 L126.5 123.8 L127.6 127.5 L128.2 131.4 L128.2 135.4 L127.7 139.5 L126.6 143.5 L124.9 147.4 L122.7 151.2 L119.9 154.6 L116.6 157.6 L112.8 160.2 L108.6 162.3 L104.1 163.8 L99.3 164.7 L94.4 165.0 L89.4 164.5 L84.4 163.3 L79.5 161.3 L74.8 158.7 L70.5 155.4 L66.6 151.4 L63.3 146.9 L60.6 141.8 L58.5 136.3 L57.2 130.5 L56.8 124.4 L57.2 118.2 L58.5 112.0 L60.6 105.9 L63.7 100.1 L67.6 94.7 L72.4 89.8 L77.8 85.5 L84.0 81.9 L90.7 79.2 L97.8 77.4 L105.3 76.6 L112.9 76.9 L120.6 78.2 L128.1 80.7 L135.4 84.2 L142.2 88.8 L148.5 94.5 L154.0 101.0 L158.6 108.4 L162.2 116.6 L164.6 125.3 L165.9 134.4 L165.9 143.9 L164.5 153.3 L161.8 162.7 L157.7 171.8 L152.3 180.4 L145.6 188.3 L137.7 195.3 L128.8 201.3 L118.9 206.0 L108.2 209.4 L97.0 211.3 L85.5 211.6\" fill=\"none\" stroke=\"#e8452c\" stroke-width=\"4.2\" stroke-linecap=\"round\" opacity=\".95\"/> <path d=\"M102.2 130.0 L102.2 130.3 L102.2 130.6 L102.1 130.9 L102.0 131.3 L101.8 131.6 L101.6 131.8 L101.4 132.1 L101.1 132.3 L100.8 132.5 L100.5 132.6 L100.1 132.7 L99.7 132.7 L99.3 132.7 L98.9 132.7 L98.5 132.5 L98.2 132.3 L97.8 132.1 L97.5 131.8 L97.2 131.5 L97.0 131.1 L96.8 130.7 L96.7 130.2 L96.6 129.7 L96.6 129.2 L96.7 128.8 L96.8 128.3 L97.1 127.8 L97.3 127.4 L97.7 127.0 L98.1 126.6 L98.6 126.3 L99.1 126.1 L99.6 125.9 L100.2 125.8 L100.8 125.8 L101.4 125.9 L102.0 126.0 L102.6 126.3 L103.1 126.6 L103.6 127.0 L104.1 127.5 L104.5 128.1 L104.8 128.7 L105.0 129.4 L105.1 130.1 L105.2 130.8 L105.1 131.6 L104.9 132.3 L104.7 133.0 L104.3 133.7 L103.8 134.4 L103.2 134.9 L102.5 135.4 L101.8 135.8 L101.0 136.1 L100.1 136.3 L99.2 136.4 L98.3 136.4 L97.3 136.2 L96.4 135.8 L95.6 135.4 L94.8 134.8 L94.0 134.1 L93.4 133.3 L92.9 132.4 L92.5 131.4 L92.2 130.3 L92.1 129.2 L92.1 128.1 L92.3 127.0 L92.7 125.9 L93.2 124.8 L93.9 123.8 L94.7 122.8 L95.7 122.0 L96.8 121.3 L98.0 120.8 L99.3 120.4 L100.6 120.2 L102.0 120.2 L103.4 120.4 L104.8 120.8 L106.2 121.4 L107.4 122.2 L108.6 123.2 L109.7 124.4 L110.6 125.7 L111.3 127.2 L111.8 128.7 L112.0 130.4 L112.1 132.1 L111.9 133.9 L111.5 135.6 L110.8 137.3 L109.8 138.9 L108.7 140.4 L107.3 141.7 L105.7 142.8 L103.9 143.7 L102.0 144.4 L100.0 144.8 L97.8 145.0 L95.7 144.8 L93.6 144.3 L91.5 143.5 L89.5 142.4 L87.6 141.1 L85.9 139.4 L84.4 137.5 L83.2 135.3 L82.3 133.0 L81.7 130.5 L81.5 127.9 L81.6 125.3 L82.1 122.6 L83.0 120.0 L84.3 117.5 L85.9 115.1 L87.9 113.0 L90.2 111.1 L92.8 109.6 L95.6 108.4 L98.7 107.5 L101.9 107.2 L105.1 107.2 L108.4 107.7 L111.7 108.7 L114.8 110.2 L117.7 112.1 L120.4 114.5 L122.8 117.2 L124.9 120.4 L126.5 123.8 L127.6 127.5 L128.2 131.4 L128.2 135.4 L127.7 139.5 L126.6 143.5 L124.9 147.4 L122.7 151.2 L119.9 154.6 L116.6 157.6 L112.8 160.2 L108.6 162.3 L104.1 163.8 L99.3 164.7 L94.4 165.0 L89.4 164.5 L84.4 163.3 L79.5 161.3 L74.8 158.7 L70.5 155.4 L66.6 151.4 L63.3 146.9 L60.6 141.8 L58.5 136.3 L57.2 130.5 L56.8 124.4 L57.2 118.2 L58.5 112.0 L60.6 105.9 L63.7 100.1 L67.6 94.7 L72.4 89.8 L77.8 85.5 L84.0 81.9 L90.7 79.2 L97.8 77.4 L105.3 76.6 L112.9 76.9 L120.6 78.2 L128.1 80.7 L135.4 84.2 L142.2 88.8 L148.5 94.5 L154.0 101.0 L158.6 108.4 L162.2 116.6 L164.6 125.3 L165.9 134.4 L165.9 143.9 L164.5 153.3 L161.8 162.7 L157.7 171.8 L152.3 180.4 L145.6 188.3 L137.7 195.3 L128.8 201.3 L118.9 206.0 L108.2 209.4 L97.0 211.3 L85.5 211.6\" fill=\"none\" stroke=\"#f2b134\" stroke-width=\"1.4\" stroke-linecap=\"round\" opacity=\".8\" transform=\"rotate(12 100 130)\"/> <circle cx=\"100\" cy=\"130\" r=\"4.5\" fill=\"#f7f3e8\"/> <path d=\"M34 291h.6M195 32h.6M65 60h.6M126 230h.6M120 194h.6M53 48h.6M124 14h.6M99 221h.6M155 1h.6M178 228h.6M68 117h.6M151 52h.6M81 15h.6M5 13h.6M166 277h.6M2 195h.6M175 110h.6M108 14h.6M135 113h.6M195 224h.6M126 283h.6M59 176h.6M59 112h.6M194 235h.6M74 11h.6M106 284h.6M164 51h.6M47 151h.6M30 170h.6M184 256h.6M108 259h.6M171 97h.6M77 145h.6M150 255h.6M129 201h.6M150 17h.6M122 124h.6M190 206h.6M106 88h.6M93 280h.6M179 191h.6M22 224h.6M169 260h.6M27 83h.6M133 201h.6M94 250h.6M187 15h.6M120 22h.6\" stroke=\"#fff\" stroke-width=\".9\" stroke-linecap=\"round\" opacity=\".055\"/> <text x=\"100\" y=\"26\" text-anchor=\"middle\" font-family=\"&#39;Saira Condensed&#39;,Helvetica,Arial,sans-serif\" font-size=\"5.4\" letter-spacing=\"1.6\" fill=\"#fff\" opacity=\".55\">A ROYAL ANTHEM PICTURE</text> <text x=\"100\" y=\"232\" text-anchor=\"middle\" font-family=\"&#39;Big Shoulders Display&#39;,Haettenschweiler,&#39;Arial Narrow&#39;,&#39;Liberation Sans Narrow&#39;,&#39;DejaVu Sans Condensed&#39;,Impact,sans-serif\" font-size=\"34\" font-weight=\"bold\" letter-spacing=\"1.2\" fill=\"#f7f3e8\" >THE</text><text x=\"100\" y=\"262\" text-anchor=\"middle\" font-family=\"&#39;Big Shoulders Display&#39;,Haettenschweiler,&#39;Arial Narrow&#39;,&#39;Liberation Sans Narrow&#39;,&#39;DejaVu Sans Condensed&#39;,Impact,sans-serif\" font-size=\"34\" font-weight=\"bold\" letter-spacing=\"1.2\" fill=\"#f7f3e8\" >SPIRAL</text> <rect x=\"28\" y=\"272\" width=\"144\" height=\"2.4\" fill=\"#fff\" opacity=\".5\" rx=\"1.2\"/><rect x=\"46\" y=\"277\" width=\"108\" height=\"1.6\" fill=\"#fff\" opacity=\".5\" rx=\"0.8\"/><rect x=\"34\" y=\"282\" width=\"132\" height=\"1.6\" fill=\"#fff\" opacity=\".5\" rx=\"0.8\"/><rect x=\"52\" y=\"287\" width=\"96\" height=\"1.6\" fill=\"#fff\" opacity=\".5\" rx=\"0.8\"/><rect x=\"40\" y=\"292\" width=\"120\" height=\"1.3\" fill=\"#fff\" opacity=\".5\" rx=\"0.7\"/> </svg>"},
+    {t:"Cellar Door", m:["1949", "NR", "1h 28m"], s:"<svg preserveAspectRatio=\"xMidYMid meet\" viewBox=\"0 0 200 300\"> <defs> <linearGradient id=\"sky\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"> <stop offset=\"0\" stop-color=\"#2a2e35\"/><stop offset=\"1\" stop-color=\"#07080a\"/> </linearGradient> <radialGradient id=\"glow\" cx=\"50%\" cy=\"38%\" r=\"55%\"> <stop offset=\"0\" stop-color=\"#9fb2c4\" stop-opacity=\".95\"/> <stop offset=\"1\" stop-color=\"#9fb2c4\" stop-opacity=\"0\"/> </radialGradient> </defs> <rect width=\"200\" height=\"300\" fill=\"url(#sky)\"/> <rect width=\"200\" height=\"300\" fill=\"url(#glow)\" opacity=\".65\"/> <rect x=\"0\" y=\"34\" width=\"200\" height=\"6\" fill=\"#000\" opacity=\".55\"/><rect x=\"0\" y=\"49\" width=\"200\" height=\"6\" fill=\"#000\" opacity=\".55\"/><rect x=\"0\" y=\"64\" width=\"200\" height=\"6\" fill=\"#000\" opacity=\".55\"/><rect x=\"0\" y=\"79\" width=\"200\" height=\"6\" fill=\"#000\" opacity=\".55\"/><rect x=\"0\" y=\"94\" width=\"200\" height=\"6\" fill=\"#000\" opacity=\".55\"/><rect x=\"0\" y=\"109\" width=\"200\" height=\"6\" fill=\"#000\" opacity=\".55\"/><rect x=\"0\" y=\"124\" width=\"200\" height=\"6\" fill=\"#000\" opacity=\".55\"/><rect x=\"0\" y=\"139\" width=\"200\" height=\"6\" fill=\"#000\" opacity=\".55\"/><rect x=\"0\" y=\"154\" width=\"200\" height=\"6\" fill=\"#000\" opacity=\".55\"/><rect x=\"0\" y=\"169\" width=\"200\" height=\"6\" fill=\"#000\" opacity=\".55\"/><rect x=\"0\" y=\"184\" width=\"200\" height=\"6\" fill=\"#000\" opacity=\".55\"/><rect x=\"0\" y=\"199\" width=\"200\" height=\"6\" fill=\"#000\" opacity=\".55\"/> <g fill=\"#04060a\"> <path d=\"M52 214c0-26 20-42 48-42s48 16 48 42z\"/> <rect x=\"90\" y=\"150\" width=\"20\" height=\"26\" rx=\"8\"/> <ellipse cx=\"100\" cy=\"132\" rx=\"22\" ry=\"25\"/> <ellipse cx=\"100\" cy=\"112\" rx=\"44\" ry=\"7\"/> <path d=\"M76 112c0-16 10-26 24-26s24 10 24 26z\"/> <rect x=\"76\" y=\"104\" width=\"48\" height=\"6\" rx=\"2\" fill=\"#0a0e14\"/> </g> <rect x=\"0\" y=\"120\" width=\"200\" height=\"5\" fill=\"#7d8fa3\" opacity=\".16\"/> <path d=\"M14 46h.6M21 184h.6M43 157h.6M64 108h.6M155 18h.6M148 81h.6M110 201h.6M185 260h.6M95 278h.6M113 257h.6M68 18h.6M7 186h.6M119 163h.6M97 216h.6M134 84h.6M143 90h.6M60 118h.6M6 90h.6M83 88h.6M34 261h.6M130 184h.6M131 286h.6M46 228h.6M106 268h.6M195 186h.6M151 181h.6M92 228h.6M41 204h.6M183 236h.6M167 271h.6M63 250h.6M71 255h.6M128 263h.6M90 232h.6M118 179h.6M145 285h.6M185 233h.6M124 113h.6M83 85h.6M157 137h.6M197 245h.6M79 155h.6M180 258h.6M143 265h.6M129 208h.6M79 106h.6M125 262h.6M93 38h.6M200 174h.6M185 4h.6M48 54h.6M15 294h.6M167 25h.6M69 116h.6M174 54h.6M193 267h.6M34 136h.6M62 107h.6M15 216h.6M183 16h.6M14 185h.6M92 88h.6M63 12h.6M21 58h.6M17 12h.6M10 10h.6M95 130h.6M32 80h.6M188 94h.6M133 0h.6\" stroke=\"#fff\" stroke-width=\".9\" stroke-linecap=\"round\" opacity=\".055\"/> <text x=\"100\" y=\"26\" text-anchor=\"middle\" font-family=\"&#39;Saira Condensed&#39;,Helvetica,Arial,sans-serif\" font-size=\"5.4\" letter-spacing=\"1.6\" fill=\"#fff\" opacity=\".55\">PRODUCED FOR THE SCREEN</text> <text x=\"100\" y=\"230\" text-anchor=\"middle\" font-family=\"&#39;Big Shoulders Display&#39;,Haettenschweiler,&#39;Arial Narrow&#39;,&#39;Liberation Sans Narrow&#39;,&#39;DejaVu Sans Condensed&#39;,Impact,sans-serif\" font-size=\"33\" font-weight=\"bold\" letter-spacing=\"1.4\" fill=\"#e6ecf2\" >CELLAR</text><text x=\"100\" y=\"259\" text-anchor=\"middle\" font-family=\"&#39;Big Shoulders Display&#39;,Haettenschweiler,&#39;Arial Narrow&#39;,&#39;Liberation Sans Narrow&#39;,&#39;DejaVu Sans Condensed&#39;,Impact,sans-serif\" font-size=\"33\" font-weight=\"bold\" letter-spacing=\"1.4\" fill=\"#e6ecf2\" >DOOR</text> <rect x=\"28\" y=\"272\" width=\"144\" height=\"2.4\" fill=\"#cfd8e2\" opacity=\".45\" rx=\"1.2\"/><rect x=\"46\" y=\"277\" width=\"108\" height=\"1.6\" fill=\"#cfd8e2\" opacity=\".45\" rx=\"0.8\"/><rect x=\"34\" y=\"282\" width=\"132\" height=\"1.6\" fill=\"#cfd8e2\" opacity=\".45\" rx=\"0.8\"/><rect x=\"52\" y=\"287\" width=\"96\" height=\"1.6\" fill=\"#cfd8e2\" opacity=\".45\" rx=\"0.8\"/><rect x=\"40\" y=\"292\" width=\"120\" height=\"1.3\" fill=\"#cfd8e2\" opacity=\".45\" rx=\"0.7\"/> </svg>"},
+    {t:"Signal From Afar", m:["1961", "PG", "2h 07m"], s:"<svg preserveAspectRatio=\"xMidYMid meet\" viewBox=\"0 0 200 300\"> <defs> <linearGradient id=\"sky\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"> <stop offset=\"0\" stop-color=\"#0d1030\"/><stop offset=\"1\" stop-color=\"#020310\"/> </linearGradient> <radialGradient id=\"glow\" cx=\"50%\" cy=\"40%\" r=\"55%\"> <stop offset=\"0\" stop-color=\"#4a6bd6\" stop-opacity=\".95\"/> <stop offset=\"1\" stop-color=\"#4a6bd6\" stop-opacity=\"0\"/> </radialGradient> </defs> <rect width=\"200\" height=\"300\" fill=\"url(#sky)\"/> <path d=\"M60 278h.6M33 189h.6M154 242h.6M160 297h.6M16 6h.6M120 132h.6M141 119h.6M49 240h.6M138 281h.6M121 203h.6M163 77h.6M59 77h.6M133 199h.6M189 7h.6M171 32h.6M40 21h.6M77 15h.6M68 242h.6M152 198h.6M182 218h.6M101 295h.6M113 68h.6M93 49h.6M9 69h.6M126 111h.6M66 223h.6M199 154h.6M107 259h.6M98 293h.6M89 273h.6M149 208h.6M149 118h.6M86 14h.6M71 83h.6M178 167h.6M138 292h.6M145 53h.6M182 108h.6M162 293h.6M68 145h.6M31 32h.6M123 247h.6M22 176h.6M17 210h.6M38 10h.6M75 218h.6M196 212h.6M30 22h.6M154 23h.6M96 300h.6M84 282h.6M71 258h.6M60 18h.6M79 3h.6M19 55h.6M153 274h.6M8 101h.6M104 149h.6M156 134h.6M39 21h.6M86 160h.6M92 70h.6M96 192h.6M117 266h.6M98 286h.6M26 259h.6M69 220h.6M162 121h.6M77 223h.6M66 266h.6M77 280h.6M86 5h.6M106 296h.6M80 10h.6M96 68h.6M15 170h.6M119 180h.6M173 180h.6M155 142h.6M188 250h.6M5 31h.6M173 10h.6M94 128h.6M160 233h.6M76 163h.6M45 186h.6M47 160h.6M194 189h.6M152 135h.6M76 193h.6M26 13h.6M145 67h.6M79 256h.6M56 137h.6M61 167h.6M47 222h.6M166 49h.6M26 164h.6M85 114h.6M112 86h.6M20 172h.6M189 111h.6M145 230h.6M69 115h.6M30 17h.6M135 97h.6M80 294h.6M46 142h.6M87 43h.6M158 176h.6M150 66h.6M107 149h.6M132 138h.6M118 177h.6M162 213h.6M74 214h.6M145 209h.6M9 211h.6M39 102h.6M1 244h.6\" stroke=\"#fff\" stroke-width=\".9\" stroke-linecap=\"round\" opacity=\".055\"/> <rect width=\"200\" height=\"300\" fill=\"url(#glow)\" opacity=\".5\"/> <circle cx=\"112\" cy=\"112\" r=\"46\" fill=\"#11162e\"/> <circle cx=\"112\" cy=\"112\" r=\"46\" fill=\"none\" stroke=\"#7f9dff\" stroke-width=\"1.4\" opacity=\".8\"/> <path d=\"M66 112a46 46 0 0 1 92 0z\" fill=\"#243a86\" opacity=\".55\"/> <ellipse cx=\"112\" cy=\"118\" rx=\"72\" ry=\"15\" fill=\"none\" stroke=\"#8fa9ff\" stroke-width=\"2.6\" opacity=\".75\" transform=\"rotate(-16 112 118)\"/> <ellipse cx=\"112\" cy=\"118\" rx=\"62\" ry=\"11\" fill=\"none\" stroke=\"#c9d6ff\" stroke-width=\"1\" opacity=\".5\" transform=\"rotate(-16 112 118)\"/> <path d=\"M0 208h200v92H0z\" fill=\"#05060f\"/> <path d=\"M0 208c40-14 62 6 98-2s58-16 102-6v10H0z\" fill=\"#0a0e22\"/> <g stroke=\"#7f9dff\" stroke-width=\".8\" opacity=\".35\"> <path d=\"M20 208v-12M180 208v-12\"/> </g> <text x=\"100\" y=\"26\" text-anchor=\"middle\" font-family=\"&#39;Saira Condensed&#39;,Helvetica,Arial,sans-serif\" font-size=\"5.4\" letter-spacing=\"1.6\" fill=\"#aebcff\" opacity=\".55\">IN SPECTACULAR WIDESCREEN</text> <text x=\"100\" y=\"240\" text-anchor=\"middle\" font-family=\"&#39;Big Shoulders Display&#39;,Haettenschweiler,&#39;Arial Narrow&#39;,&#39;Liberation Sans Narrow&#39;,&#39;DejaVu Sans Condensed&#39;,Impact,sans-serif\" font-size=\"27\" font-weight=\"bold\" letter-spacing=\"1.1\" fill=\"#dfe6ff\" >SIGNAL</text><text x=\"100\" y=\"264\" text-anchor=\"middle\" font-family=\"&#39;Big Shoulders Display&#39;,Haettenschweiler,&#39;Arial Narrow&#39;,&#39;Liberation Sans Narrow&#39;,&#39;DejaVu Sans Condensed&#39;,Impact,sans-serif\" font-size=\"27\" font-weight=\"bold\" letter-spacing=\"1.1\" fill=\"#dfe6ff\" >FROM AFAR</text> <rect x=\"28\" y=\"276\" width=\"144\" height=\"2.4\" fill=\"#9fb0ff\" opacity=\".45\" rx=\"1.2\"/><rect x=\"46\" y=\"281\" width=\"108\" height=\"1.6\" fill=\"#9fb0ff\" opacity=\".45\" rx=\"0.8\"/><rect x=\"34\" y=\"286\" width=\"132\" height=\"1.6\" fill=\"#9fb0ff\" opacity=\".45\" rx=\"0.8\"/><rect x=\"52\" y=\"291\" width=\"96\" height=\"1.6\" fill=\"#9fb0ff\" opacity=\".45\" rx=\"0.8\"/><rect x=\"40\" y=\"296\" width=\"120\" height=\"1.3\" fill=\"#9fb0ff\" opacity=\".45\" rx=\"0.7\"/> </svg>"},
+    {t:"The Long Way Down", m:["1955", "PG-13", "1h 55m"], s:"<svg preserveAspectRatio=\"xMidYMid meet\" viewBox=\"0 0 200 300\"> <defs> <linearGradient id=\"sky\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"> <stop offset=\"0\" stop-color=\"#f2a341\"/><stop offset=\"1\" stop-color=\"#7a2c14\"/> </linearGradient> <radialGradient id=\"glow\" cx=\"50%\" cy=\"52%\" r=\"55%\"> <stop offset=\"0\" stop-color=\"#ffd88a\" stop-opacity=\".95\"/> <stop offset=\"1\" stop-color=\"#ffd88a\" stop-opacity=\"0\"/> </radialGradient> </defs> <rect width=\"200\" height=\"300\" fill=\"url(#sky)\"/> <circle cx=\"100\" cy=\"150\" r=\"62\" fill=\"#ffcf6b\" opacity=\".9\"/> <g fill=\"#f2a341\" opacity=\".55\"> <rect x=\"0\" y=\"112\" width=\"200\" height=\"4\"/><rect x=\"0\" y=\"124\" width=\"200\" height=\"5\"/> <rect x=\"0\" y=\"138\" width=\"200\" height=\"6\"/> </g> <path d=\"M0 176h44l10-26h26l8 26h34l12-34h22l10 34h34v42H0z\" fill=\"#5d2110\"/> <path d=\"M0 200c30-8 44 4 74 0s54-10 126-2v34H0z\" fill=\"#3a1409\"/> <g fill=\"#230c05\"> <ellipse cx=\"100\" cy=\"212\" rx=\"17\" ry=\"3.5\" opacity=\".5\"/> <ellipse cx=\"100\" cy=\"146\" rx=\"17\" ry=\"3.4\"/> <path d=\"M91 146c0-7 4-11 9-11s9 4 9 11z\"/> <rect x=\"97\" y=\"152\" width=\"6\" height=\"6\"/> <path d=\"M88 158h24l5 30-6 2-4-18-2 38h-6l-3-24-3 24h-6l-2-38-4 18-6-2z\"/> <path d=\"M86 210h11l-1 4H85zM103 210h11l1 4h-12z\"/> </g> <path d=\"M60 155h.6M26 202h.6M122 79h.6M23 34h.6M5 205h.6M140 148h.6M195 30h.6M56 266h.6M137 184h.6M70 88h.6M27 134h.6M54 13h.6M164 133h.6M69 99h.6M42 158h.6M74 190h.6M22 172h.6M171 198h.6M129 127h.6M45 126h.6M121 143h.6M22 280h.6M76 3h.6M74 293h.6M180 159h.6M195 260h.6M49 211h.6M108 147h.6M110 231h.6M41 119h.6M78 132h.6M11 41h.6M11 236h.6M160 143h.6M132 273h.6M165 241h.6M179 175h.6M37 100h.6M17 211h.6M51 225h.6M70 94h.6M91 223h.6M191 164h.6M162 285h.6M50 165h.6M25 31h.6M181 117h.6M71 298h.6M157 121h.6M31 169h.6\" stroke=\"#fff\" stroke-width=\".9\" stroke-linecap=\"round\" opacity=\".055\"/> <text x=\"100\" y=\"26\" text-anchor=\"middle\" font-family=\"&#39;Saira Condensed&#39;,Helvetica,Arial,sans-serif\" font-size=\"5.4\" letter-spacing=\"1.6\" fill=\"#4a1a0c\" opacity=\".65\">A MOTION PICTURE</text> <text x=\"100\" y=\"250\" text-anchor=\"middle\" font-family=\"&#39;Big Shoulders Display&#39;,Haettenschweiler,&#39;Arial Narrow&#39;,&#39;Liberation Sans Narrow&#39;,&#39;DejaVu Sans Condensed&#39;,Impact,sans-serif\" font-size=\"25\" font-weight=\"bold\" letter-spacing=\"0.8\" fill=\"#2a0e06\" >THE LONG</text><text x=\"100\" y=\"272\" text-anchor=\"middle\" font-family=\"&#39;Big Shoulders Display&#39;,Haettenschweiler,&#39;Arial Narrow&#39;,&#39;Liberation Sans Narrow&#39;,&#39;DejaVu Sans Condensed&#39;,Impact,sans-serif\" font-size=\"25\" font-weight=\"bold\" letter-spacing=\"0.8\" fill=\"#2a0e06\" >WAY DOWN</text> <rect x=\"28\" y=\"280\" width=\"144\" height=\"2.4\" fill=\"#2a0e06\" opacity=\".4\" rx=\"1.2\"/><rect x=\"46\" y=\"285\" width=\"108\" height=\"1.6\" fill=\"#2a0e06\" opacity=\".4\" rx=\"0.8\"/><rect x=\"34\" y=\"290\" width=\"132\" height=\"1.6\" fill=\"#2a0e06\" opacity=\".4\" rx=\"0.8\"/><rect x=\"52\" y=\"295\" width=\"96\" height=\"1.6\" fill=\"#2a0e06\" opacity=\".4\" rx=\"0.8\"/><rect x=\"40\" y=\"300\" width=\"120\" height=\"1.3\" fill=\"#2a0e06\" opacity=\".4\" rx=\"0.7\"/> </svg>"},
+    {t:"Static and Snow", m:["1972", "R", "1h 36m"], s:"<svg preserveAspectRatio=\"xMidYMid meet\" viewBox=\"0 0 200 300\"> <defs> <linearGradient id=\"sky\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"> <stop offset=\"0\" stop-color=\"#14202a\"/><stop offset=\"1\" stop-color=\"#03060a\"/> </linearGradient> <radialGradient id=\"glow\" cx=\"50%\" cy=\"32%\" r=\"55%\"> <stop offset=\"0\" stop-color=\"#8fd0c0\" stop-opacity=\".95\"/> <stop offset=\"1\" stop-color=\"#8fd0c0\" stop-opacity=\"0\"/> </radialGradient> </defs> <rect width=\"200\" height=\"300\" fill=\"url(#sky)\"/> <rect width=\"200\" height=\"300\" fill=\"url(#glow)\" opacity=\".55\"/> <circle cx=\"100\" cy=\"92\" r=\"40\" fill=\"#dff3ec\" opacity=\".92\"/> <circle cx=\"88\" cy=\"82\" r=\"6\" fill=\"#c3ddd6\" opacity=\".5\"/> <circle cx=\"110\" cy=\"102\" r=\"9\" fill=\"#c3ddd6\" opacity=\".35\"/> <circle cx=\"106\" cy=\"76\" r=\"4\" fill=\"#c3ddd6\" opacity=\".4\"/> <g fill=\"#040709\"> <path d=\"M62 214V150l38-26 38 26v64z\"/> <path d=\"M54 152l46-32 46 32-6 6-40-28-40 28z\"/> <path d=\"M84 214v-26h14v26zM112 168h14v14h-14z\"/> </g> <rect x=\"86\" y=\"190\" width=\"10\" height=\"24\" fill=\"#ffd98a\" opacity=\".9\"/> <rect x=\"113\" y=\"170\" width=\"12\" height=\"11\" fill=\"#ffd98a\" opacity=\".75\"/> <g stroke=\"#04080b\" stroke-width=\"3\" fill=\"none\" stroke-linecap=\"round\"> <path d=\"M28 240V150\"/><path d=\"M28 186c-8-10-14-12-20-22M28 170c9-9 15-10 22-20M28 204c-7-8-13-9-18-16\"/> </g> <path d=\"M0 236c46-10 70 6 104 2s58-12 96-4v66H0z\" fill=\"#03060a\"/> <path d=\"M159 130h.6M189 183h.6M176 271h.6M7 238h.6M198 127h.6M166 26h.6M40 57h.6M95 240h.6M63 194h.6M139 52h.6M146 127h.6M3 110h.6M104 143h.6M46 199h.6M40 36h.6M35 227h.6M32 67h.6M0 2h.6M53 110h.6M42 85h.6M74 160h.6M50 276h.6M173 104h.6M46 100h.6M98 152h.6M5 184h.6M106 84h.6M37 135h.6M16 169h.6M77 300h.6M0 173h.6M16 158h.6M90 156h.6M123 161h.6M47 246h.6M120 90h.6M14 131h.6M5 183h.6M103 9h.6M140 214h.6M93 192h.6M148 4h.6M115 23h.6M181 92h.6M159 100h.6M30 125h.6M118 176h.6M131 181h.6M134 128h.6M198 236h.6M27 188h.6M75 18h.6M110 46h.6M53 174h.6M131 185h.6M37 174h.6M70 279h.6M23 159h.6M175 162h.6M78 90h.6\" stroke=\"#fff\" stroke-width=\".9\" stroke-linecap=\"round\" opacity=\".055\"/> <text x=\"100\" y=\"26\" text-anchor=\"middle\" font-family=\"&#39;Saira Condensed&#39;,Helvetica,Arial,sans-serif\" font-size=\"5.4\" letter-spacing=\"1.6\" fill=\"#a9cfc6\" opacity=\".55\">YOU HAVE BEEN WARNED</text> <text x=\"100\" y=\"250\" text-anchor=\"middle\" font-family=\"&#39;Big Shoulders Display&#39;,Haettenschweiler,&#39;Arial Narrow&#39;,&#39;Liberation Sans Narrow&#39;,&#39;DejaVu Sans Condensed&#39;,Impact,sans-serif\" font-size=\"26\" font-weight=\"bold\" letter-spacing=\"1\" fill=\"#e8f5f1\" >STATIC</text><text x=\"100\" y=\"273\" text-anchor=\"middle\" font-family=\"&#39;Big Shoulders Display&#39;,Haettenschweiler,&#39;Arial Narrow&#39;,&#39;Liberation Sans Narrow&#39;,&#39;DejaVu Sans Condensed&#39;,Impact,sans-serif\" font-size=\"26\" font-weight=\"bold\" letter-spacing=\"1\" fill=\"#e8f5f1\" >AND SNOW</text> <rect x=\"28\" y=\"280\" width=\"144\" height=\"2.4\" fill=\"#9fc2ba\" opacity=\".45\" rx=\"1.2\"/><rect x=\"46\" y=\"285\" width=\"108\" height=\"1.6\" fill=\"#9fc2ba\" opacity=\".45\" rx=\"0.8\"/><rect x=\"34\" y=\"290\" width=\"132\" height=\"1.6\" fill=\"#9fc2ba\" opacity=\".45\" rx=\"0.8\"/><rect x=\"52\" y=\"295\" width=\"96\" height=\"1.6\" fill=\"#9fc2ba\" opacity=\".45\" rx=\"0.8\"/><rect x=\"40\" y=\"300\" width=\"120\" height=\"1.3\" fill=\"#9fc2ba\" opacity=\".45\" rx=\"0.7\"/> </svg>"},
+    {t:"Eighty-Eight Keys", m:["1964", "NR", "2h 21m"], s:"<svg preserveAspectRatio=\"xMidYMid meet\" viewBox=\"0 0 200 300\"> <defs> <linearGradient id=\"sky\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"> <stop offset=\"0\" stop-color=\"#2a1633\"/><stop offset=\"1\" stop-color=\"#0a0510\"/> </linearGradient> <radialGradient id=\"glow\" cx=\"50%\" cy=\"36%\" r=\"55%\"> <stop offset=\"0\" stop-color=\"#c86ad0\" stop-opacity=\".95\"/> <stop offset=\"1\" stop-color=\"#c86ad0\" stop-opacity=\"0\"/> </radialGradient> </defs> <rect width=\"200\" height=\"300\" fill=\"url(#sky)\"/> <rect width=\"200\" height=\"300\" fill=\"url(#glow)\" opacity=\".6\"/> <g opacity=\".22\" stroke=\"#f2c14e\" stroke-width=\"1.2\" fill=\"none\"> <path d=\"M100 148L14 40M100 148L54 26M100 148l46-122M100 148l86 108M100 148L186 40\"/> </g> <g transform=\"skewY(-6) translate(0 14)\"><rect x=\"18.0\" y=\"150\" width=\"13\" height=\"76\" rx=\"1.5\" fill=\"#f5efe0\" opacity=\".95\"/><rect x=\"34.4\" y=\"150\" width=\"13\" height=\"76\" rx=\"1.5\" fill=\"#f5efe0\" opacity=\".95\"/><rect x=\"50.8\" y=\"150\" width=\"13\" height=\"76\" rx=\"1.5\" fill=\"#f5efe0\" opacity=\".95\"/><rect x=\"67.2\" y=\"150\" width=\"13\" height=\"76\" rx=\"1.5\" fill=\"#f5efe0\" opacity=\".95\"/><rect x=\"83.6\" y=\"150\" width=\"13\" height=\"76\" rx=\"1.5\" fill=\"#f5efe0\" opacity=\".95\"/><rect x=\"100.0\" y=\"150\" width=\"13\" height=\"76\" rx=\"1.5\" fill=\"#e8452c\" opacity=\".95\"/><rect x=\"116.4\" y=\"150\" width=\"13\" height=\"76\" rx=\"1.5\" fill=\"#f5efe0\" opacity=\".95\"/><rect x=\"132.8\" y=\"150\" width=\"13\" height=\"76\" rx=\"1.5\" fill=\"#f5efe0\" opacity=\".95\"/><rect x=\"149.2\" y=\"150\" width=\"13\" height=\"76\" rx=\"1.5\" fill=\"#f5efe0\" opacity=\".95\"/><rect x=\"165.6\" y=\"150\" width=\"13\" height=\"76\" rx=\"1.5\" fill=\"#f5efe0\" opacity=\".95\"/><rect x=\"28.0\" y=\"150\" width=\"8\" height=\"46\" rx=\"1\" fill=\"#16120e\"/><rect x=\"44.4\" y=\"150\" width=\"8\" height=\"46\" rx=\"1\" fill=\"#16120e\"/><rect x=\"77.2\" y=\"150\" width=\"8\" height=\"46\" rx=\"1\" fill=\"#16120e\"/><rect x=\"93.6\" y=\"150\" width=\"8\" height=\"46\" rx=\"1\" fill=\"#16120e\"/><rect x=\"110.0\" y=\"150\" width=\"8\" height=\"46\" rx=\"1\" fill=\"#16120e\"/><rect x=\"142.8\" y=\"150\" width=\"8\" height=\"46\" rx=\"1\" fill=\"#16120e\"/><rect x=\"159.2\" y=\"150\" width=\"8\" height=\"46\" rx=\"1\" fill=\"#16120e\"/></g> <circle cx=\"100\" cy=\"80\" r=\"26\" fill=\"none\" stroke=\"#f2c14e\" stroke-width=\"1.6\" opacity=\".7\"/> <circle cx=\"100\" cy=\"80\" r=\"17\" fill=\"none\" stroke=\"#f2c14e\" stroke-width=\"1\" opacity=\".45\"/> <path d=\"M146 41h.6M124 133h.6M9 0h.6M37 300h.6M120 191h.6M81 11h.6M69 250h.6M50 211h.6M137 276h.6M174 48h.6M49 288h.6M141 135h.6M169 45h.6M108 171h.6M23 185h.6M104 128h.6M113 48h.6M193 100h.6M179 149h.6M24 23h.6M150 102h.6M167 184h.6M124 99h.6M131 294h.6M165 257h.6M7 185h.6M62 220h.6M77 182h.6M150 61h.6M22 256h.6M173 268h.6M50 59h.6M155 137h.6M79 100h.6M97 247h.6M57 70h.6M152 107h.6M178 267h.6M3 96h.6M199 86h.6M4 170h.6M142 156h.6M95 193h.6M135 199h.6M74 64h.6M173 250h.6M13 94h.6M108 203h.6M24 225h.6M62 45h.6M154 228h.6M114 194h.6M19 264h.6M109 241h.6M77 209h.6M21 98h.6M191 136h.6M115 249h.6M184 88h.6M4 11h.6M137 63h.6M64 184h.6M48 131h.6M128 231h.6M84 264h.6M65 210h.6M107 248h.6M68 243h.6M168 245h.6M125 72h.6\" stroke=\"#fff\" stroke-width=\".9\" stroke-linecap=\"round\" opacity=\".055\"/> <text x=\"100\" y=\"26\" text-anchor=\"middle\" font-family=\"&#39;Saira Condensed&#39;,Helvetica,Arial,sans-serif\" font-size=\"4.8\" letter-spacing=\"1.2\" fill=\"#f0cf8d\" opacity=\".6\">WITH SOUND BY WESTERN ELECTRIC</text> <text x=\"100\" y=\"254\" text-anchor=\"middle\" font-family=\"&#39;Big Shoulders Display&#39;,Haettenschweiler,&#39;Arial Narrow&#39;,&#39;Liberation Sans Narrow&#39;,&#39;DejaVu Sans Condensed&#39;,Impact,sans-serif\" font-size=\"24\" font-weight=\"bold\" letter-spacing=\"0.9\" fill=\"#f7e9c8\" >EIGHTY-EIGHT</text><text x=\"100\" y=\"275\" text-anchor=\"middle\" font-family=\"&#39;Big Shoulders Display&#39;,Haettenschweiler,&#39;Arial Narrow&#39;,&#39;Liberation Sans Narrow&#39;,&#39;DejaVu Sans Condensed&#39;,Impact,sans-serif\" font-size=\"24\" font-weight=\"bold\" letter-spacing=\"0.9\" fill=\"#f7e9c8\" >KEYS</text> <rect x=\"28\" y=\"282\" width=\"144\" height=\"2.4\" fill=\"#e6c98f\" opacity=\".45\" rx=\"1.2\"/><rect x=\"46\" y=\"287\" width=\"108\" height=\"1.6\" fill=\"#e6c98f\" opacity=\".45\" rx=\"0.8\"/><rect x=\"34\" y=\"292\" width=\"132\" height=\"1.6\" fill=\"#e6c98f\" opacity=\".45\" rx=\"0.8\"/><rect x=\"52\" y=\"297\" width=\"96\" height=\"1.6\" fill=\"#e6c98f\" opacity=\".45\" rx=\"0.8\"/><rect x=\"40\" y=\"302\" width=\"120\" height=\"1.3\" fill=\"#e6c98f\" opacity=\".45\" rx=\"0.7\"/> </svg>"}
+  ];
+
+  function demoQueue() {
+    const items = DEMO_POSTERS.map((p, i) => ({
+      key: 'demo' + i, title: p.t, meta: p.m, svg: p.s, thumb: '',
+    }));
+    return { items, rotate_seconds: 7, poll_seconds: 9999, queue_seconds: 9999 };
+  }
+
+  function preload(src) {
+    return new Promise(res => {
+      const i = new Image();
+      i.onload = i.onerror = () => res(src);
+      i.src = src;
+    });
+  }
+
+  // Swap the poster: lamps dip, image crossfades, lamps surge back up.
+  async function dress(item, nextMode) {
+    if (!item) return;
+    const key = item.key + '|' + nextMode;
+    if (key === currentKey) return;
+    currentKey = key;
+
+    if (!item.svg) await preload(artUrl(item.thumb));
+
+    caseEl.classList.add('dim');
+    await wait(320);
+
+    const incoming = layer ? $('pa') : $('pb');
+    const outgoing = layer ? $('pb') : $('pa');
+    if (item.svg) {
+      // Inlined rather than a background image, so the poster's lettering
+      // picks up the same webfonts as the rest of the case.
+      incoming.style.backgroundImage = '';
+      incoming.innerHTML = item.svg;
+    } else {
+      incoming.innerHTML = '';
+      incoming.style.backgroundImage = `url("${artUrl(item.thumb)}")`;
+    }
+    incoming.classList.add('live');
+    outgoing.classList.remove('live');
+    layer ^= 1;
+
+    caseEl.dataset.mode = nextMode;
+    $('label').textContent = nextMode === 'now' ? 'Now Showing' : 'Coming Soon';
+    $('title').textContent = item.title || '';
+    $('meta').innerHTML = (item.meta || []).map(m => `<span>${m}</span>`).join('');
+
+    caseEl.classList.remove('dim');
+    caseEl.classList.add('surge');
+    await wait(480);
+    caseEl.classList.remove('surge');
+  }
+
+  // ── Coming soon rotation ────────────────────────────────────────
+  async function loadQueue() {
+    try {
+      const d = demo ? demoQueue() : await api('queue');
+      if (d.items && d.items.length) {
+        queue = shuffle(d.items);
+        qi = 0;
+      }
+      rotateMs = (d.rotate_seconds || 30) * 1000;
+      pollMs = (d.poll_seconds || 5) * 1000;
+      queueMs = (d.queue_seconds || 1800) * 1000;
+    } catch (e) { /* keep whatever we already have */ }
+  }
+
+  function shuffle(a) {
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function nextUp() {
+    if (!queue.length) return null;
+    if (qi >= queue.length) {
+      const last = queue[queue.length - 1];
+      shuffle(queue);
+      // Don't reshuffle straight into the poster that's already up
+      if (queue.length > 1 && queue[0] === last) [queue[0], queue[1]] = [queue[1], queue[0]];
+      qi = 0;
+    }
+    return queue[qi++];
+  }
+
+  function startRotation() {
+    if (rotateTimer) return;
+    const tick = () => {
+      if (!queue.length) { loadQueue().then(() => dress(nextUp(), 'soon')); return; }
+      dress(nextUp(), 'soon');
+    };
+    tick();
+    rotateTimer = setInterval(tick, rotateMs);
+  }
+
+  function stopRotation() {
+    clearInterval(rotateTimer);
+    rotateTimer = null;
+  }
+
+  // ── Session polling ─────────────────────────────────────────────
+  let demoFlip = 0;
+  async function poll() {
+    if (demo) {
+      // Every fourth poster, pretend something started playing
+      const item = nextUp();
+      const nowShowing = (++demoFlip % 4) === 0;
+      await dress(item, nowShowing ? 'now' : 'soon');
+      if (nowShowing) runProgress(38 * 60000, 112 * 60000); else stopProgress();
+      return;
+    }
+    try {
+      const s = await api('state');
+      if (s.configured === false) return unconfigured();
+      note(s.ok === false ? 'No answer from Plex — retrying' : '');
+
+      if (s.playing) {
+        stopRotation();
+        await dress(s.playing, 'now');
+        runProgress(s.playing.offset_ms, s.playing.duration_ms);
+      } else {
+        stopProgress();
+        startRotation();
+      }
+    } catch (e) {
+      note('No answer from Plex — retrying');
+    }
+  }
+
+  function note(text) {
+    $('fault').textContent = text;
+    $('fault').classList.toggle('on', !!text);
+  }
+
+  // Fresh install, no token yet. Say so on the wall rather than showing an
+  // empty case that looks broken.
+  function unconfigured() {
+    stopRotation();
+    stopProgress();
+    caseEl.dataset.mode = 'soon';
+    $('label').textContent = 'Coming Soon';
+    $('title').textContent = 'Not connected to Plex';
+    $('meta').innerHTML = '<span>Open /setup to finish</span>';
+    note('');
+  }
+
+  // Bar advances locally between polls so it never looks frozen
+  function runProgress(offset, duration) {
+    stopProgress();
+    if (!duration) return;
+    let ms = offset;
+    const draw = () => { $('bar').style.width = Math.min(100, ms / duration * 100) + '%'; };
+    draw();
+    prog = setInterval(() => { ms += 1000; draw(); }, 1000);
+  }
+  function stopProgress() { clearInterval(prog); prog = null; }
+
+  // ── Bulbs ───────────────────────────────────────────────────────
+  function layBulbs() {
+    const box = $('bulbs');
+    // offsetWidth/Height are untransformed layout pixels; getBoundingClientRect
+    // would report the rotated screen-space box and put every bulb in the wrong
+    // place once ?rotate is in play.
+    const cw = caseEl.offsetWidth, ch = caseEl.offsetHeight;
+    if (!cw) return;
+
+    const em = parseFloat(getComputedStyle(caseEl).fontSize);
+    const inset = em * 0.95;              // bulb centre line, inside the frame edge
+    const gap = em * 1.90;                // target spacing between bulbs
+    const w = cw - inset * 2;
+    const h = ch - inset * 2;
+    const nx = Math.max(2, Math.round(w / gap));
+    const ny = Math.max(2, Math.round(h / gap));
+    const pts = [];
+
+    for (let i = 0; i < nx; i++) pts.push([inset + w * i / nx, inset]);              // top →
+    for (let i = 0; i < ny; i++) pts.push([inset + w, inset + h * i / ny]);          // right ↓
+    for (let i = 0; i < nx; i++) pts.push([inset + w - w * i / nx, inset + h]);      // bottom ←
+    for (let i = 0; i < ny; i++) pts.push([inset, inset + h - h * i / ny]);          // left ↑
+
+    // Index runs backwards so the wave travels clockwise, the way a
+    // real marquee chase does.
+    const n = pts.length;
+    box.innerHTML = pts.map(([x, y], i) =>
+      `<i class="bulb" style="left:${x}px;top:${y}px;--i:${n - i}"><b></b></i>`).join('');
+  }
+
+  let relayout;
+  addEventListener('resize', () => {
+    clearTimeout(relayout);
+    relayout = setTimeout(layBulbs, 200);
+  });
+
+  // ── Boot ────────────────────────────────────────────────────────
+  (async function start() {
+    layBulbs();
+    // Fonts change the em box, which moves the bulbs — re-lay once they land.
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(layBulbs);
+    await loadQueue();
+    await poll();
+    setInterval(poll, demo ? rotateMs : pollMs);
+    if (!demo) setInterval(loadQueue, queueMs);
+  })();
+})();
+</script>
+</body>
+</html>

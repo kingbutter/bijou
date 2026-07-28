@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bijou — get your config</title>
+<style>
+:root{
+  --ink:#e9e3d6; --dim:#9a958a; --line:#2a2d33;
+  --tungsten:#ffc46b; --panel:#15171c; --void:#0b0d11; --ok:#7fd18e; --bad:#e8735e;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--void);color:var(--ink);min-height:100vh;padding:2rem 1.25rem 4rem;
+  font:16px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:640px;margin:0 auto}
+
+h1{
+  font-size:1.6rem;font-weight:800;letter-spacing:.02em;margin-bottom:.15rem;
+}
+h1 b{color:var(--tungsten);font-weight:800}
+.sub{color:var(--dim);font-size:.92rem;margin-bottom:2rem}
+
+.step{
+  border:1px solid var(--line);border-radius:.7rem;background:var(--panel);
+  padding:1.1rem 1.15rem;margin-bottom:.85rem;
+  opacity:.42;transition:opacity .25s ease,border-color .25s ease;
+}
+.step.on{opacity:1;border-color:#3a4048}
+.step.done{opacity:1}
+.step h2{
+  font-size:.72rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--dim);margin-bottom:.7rem;display:flex;align-items:center;gap:.55rem;
+}
+.step.done h2::after{content:"✓";color:var(--ok);font-size:.9rem;letter-spacing:0}
+
+button{
+  font:inherit;font-weight:600;cursor:pointer;
+  background:var(--tungsten);color:#241a08;border:0;border-radius:.45rem;
+  padding:.6rem 1.1rem;
+}
+button:disabled{opacity:.45;cursor:default}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+
+.code{
+  font:700 2.6rem/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.4rem;color:var(--tungsten);margin:.4rem 0 .2rem;
+}
+a{color:var(--tungsten)}
+.hint{color:var(--dim);font-size:.86rem;margin-top:.5rem}
+
+.row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+.opt{
+  display:block;width:100%;text-align:left;background:#1b1e24;color:var(--ink);
+  border:1px solid var(--line);border-radius:.45rem;padding:.6rem .75rem;
+  margin-bottom:.4rem;font-weight:500;cursor:pointer;
+}
+.opt:hover{border-color:#4a515b}
+.opt.sel{border-color:var(--tungsten);background:#241f16}
+.opt small{display:block;color:var(--dim);font-weight:400;font-size:.8rem;margin-top:.1rem}
+.opt .tag{
+  float:right;font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--tungsten);border:1px solid #45392200;background:#2e2616;
+  padding:.15rem .4rem;border-radius:.25rem;
+}
+
+pre{
+  background:#07090c;border:1px solid var(--line);border-radius:.5rem;
+  padding:.9rem;overflow-x:auto;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;
+  color:#cfe3d2;white-space:pre;
+}
+.warn{
+  border-left:3px solid var(--tungsten);background:#1a1611;
+  padding:.7rem .85rem;border-radius:.3rem;font-size:.87rem;margin-top:.9rem;color:#e5d7bd;
+}
+.err{color:var(--bad);font-size:.88rem;margin-top:.6rem}
+.spin{display:inline-block;width:.9em;height:.9em;border:2px solid #4a515b;
+  border-top-color:var(--tungsten);border-radius:50%;animation:sp .7s linear infinite;
+  vertical-align:-.1em;margin-right:.4rem}
+@keyframes sp{to{transform:rotate(360deg)}}
+label{display:block;margin:.55rem 0 .2rem;color:var(--dim);font-size:.82rem}
+input[type=text]{
+  font:inherit;width:100%;background:#1b1e24;color:var(--ink);
+  border:1px solid var(--line);border-radius:.4rem;padding:.5rem .65rem;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Set up <b>Bijou</b></h1>
+  <p class="sub">Sign in to Plex, pick your library, and copy the result into
+     your config. Nothing is saved on this machine.</p>
+
+  <!-- 1 ─ sign in -->
+  <section class="step on" id="s1">
+    <h2>1 · Sign in to Plex</h2>
+    <div id="s1body">
+      <button id="start">Get a login code</button>
+      <p class="hint">Opens a code you enter at plex.tv/link. Bijou never sees
+         your password.</p>
+    </div>
+  </section>
+
+  <!-- 2 ─ server -->
+  <section class="step" id="s2">
+    <h2>2 · Choose your server</h2>
+    <div id="s2body"><p class="hint">Waiting for sign-in.</p></div>
+  </section>
+
+  <!-- 3 ─ libraries -->
+  <section class="step" id="s3">
+    <h2>3 · Choose libraries</h2>
+    <div id="s3body"><p class="hint">Waiting for a server.</p></div>
+  </section>
+
+  <!-- 4 ─ player -->
+  <section class="step" id="s4">
+    <h2>4 · Which player is the theater?</h2>
+    <div id="s4body"><p class="hint">Waiting for a server.</p></div>
+  </section>
+
+  <!-- 5 ─ result -->
+  <section class="step" id="s5">
+    <h2>5 · Your config</h2>
+    <div id="s5body"><p class="hint">Finish the steps above.</p></div>
+  </section>
+</div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const api = async (path, params={}) => {
+    const r = await fetch('/api/setup/' + path + '?' + new URLSearchParams(params));
+    if (!r.ok) throw new Error(await r.text() || r.status);
+    return r.json();
+  };
+
+  const state = { token:null, server:null, conn:null, libs:[], match:'' };
+
+  function step(n, cls) {
+    const el = $('s' + n);
+    el.classList.add(cls === 'done' ? 'done' : 'on');
+    if (cls === 'done') el.classList.add('on');
+  }
+
+  // ── 1. PIN login ────────────────────────────────────────────────
+  $('start').onclick = async () => {
+    $('start').disabled = true;
+    try {
+      const pin = await api('pin');
+      $('s1body').innerHTML = `
+        <div class="code">${pin.code}</div>
+        <p>Enter it at <a href="${pin.url}" target="_blank" rel="noopener">plex.tv/link</a>,
+           or <a href="${pin.deep_link}" target="_blank" rel="noopener">open Plex directly</a>.</p>
+        <p class="hint" id="waiting"><span class="spin"></span>Waiting for you to approve it…</p>`;
+      poll(pin.id);
+    } catch (e) {
+      $('start').disabled = false;
+      fail('s1body', e);
+    }
+  };
+
+  function poll(id) {
+    const started = Date.now();
+    const tick = async () => {
+      if (Date.now() - started > 15 * 60000) {
+        $('waiting').innerHTML = 'That code expired. Reload to try again.';
+        return;
+      }
+      try {
+        const d = await api('check', { id });
+        if (d.token) { state.token = d.token; onToken(); return; }
+      } catch (e) { /* keep waiting */ }
+      setTimeout(tick, 2000);
+    };
+    setTimeout(tick, 2000);
+  }
+
+  async function onToken() {
+    $('s1body').innerHTML = `<p>Signed in.</p>`;
+    step(1, 'done'); step(2, 'on');
+    $('s2body').innerHTML = `<p class="hint"><span class="spin"></span>Looking for servers…</p>`;
+    try {
+      const { servers } = await api('servers', { token: state.token });
+      if (!servers.length) return fail('s2body', 'No servers on this account.');
+      $('s2body').innerHTML = servers.map((s, i) => `
+        <button class="opt" data-i="${i}">
+          ${s.owned ? '<span class="tag">yours</span>' : ''}
+          ${esc(s.name)}
+          <small>${esc(s.connections[0].address)}:${s.connections[0].port}${
+            s.connections[0].local ? ' · local' : ' · remote'}</small>
+        </button>`).join('');
+      $('s2body').querySelectorAll('.opt').forEach(b => {
+        b.onclick = () => pickServer(servers[+b.dataset.i], b);
+      });
+    } catch (e) { fail('s2body', e); }
+  }
+
+  // ── 2. Server ───────────────────────────────────────────────────
+  async function pickServer(srv, btn) {
+    $('s2body').querySelectorAll('.opt').forEach(b => b.classList.remove('sel'));
+    btn.classList.add('sel');
+    state.server = srv;
+    state.conn = srv.connections[0];
+    step(2, 'done'); step(3, 'on'); step(4, 'on');
+
+    const args = {
+      token: state.token, host: state.conn.address,
+      port: state.conn.port, https: state.conn.https ? '1' : '0',
+    };
+
+    $('s3body').innerHTML = `<p class="hint"><span class="spin"></span>Reading libraries…</p>`;
+    try {
+      const { libraries } = await api('libraries', args);
+      const movies = libraries.filter(l => l.type === 'movie');
+      if (!libraries.length) return fail('s3body', 'No libraries found.');
+      $('s3body').innerHTML = libraries.map(l => `
+        <button class="opt${movies.length === 1 && l === movies[0] ? ' sel' : ''}"
+                data-key="${esc(l.key)}">
+          <span class="tag">${esc(l.type)}</span>${esc(l.title)}
+          <small>section ${esc(l.key)}</small>
+        </button>`).join('') +
+        `<p class="hint">Pick one or more. Titles from all of them get mixed together.</p>`;
+      if (movies.length === 1) state.libs = [movies[0].key];
+      $('s3body').querySelectorAll('.opt').forEach(b => {
+        b.onclick = () => {
+          b.classList.toggle('sel');
+          state.libs = [...$('s3body').querySelectorAll('.opt.sel')].map(x => x.dataset.key);
+          render();
+        };
+      });
+      render();
+    } catch (e) { fail('s3body', e); }
+
+    $('s4body').innerHTML = `<p class="hint"><span class="spin"></span>Looking for players…</p>`;
+    try {
+      const { players } = await api('players', args);
+      const list = players.length
+        ? players.map(p => `
+            <button class="opt" data-m="${esc(p.address || p.name)}">
+              ${p.source === 'playing' ? '<span class="tag">playing now</span>' : ''}
+              ${esc(p.name || p.address)}
+              <small>${esc(p.address || '')}</small>
+            </button>`).join('')
+        : '';
+      $('s4body').innerHTML = list + `
+        <label for="manual">Or type an IP address or player name</label>
+        <input type="text" id="manual" placeholder="172.20.24.23">
+        <p class="hint">Plex only reports players that are streaming or that
+           announce themselves for remote control, so yours may not be listed.
+           Start something playing in the theater and reload, or just type the
+           IP. Leave blank to react to any playback on the server.</p>`;
+      $('s4body').querySelectorAll('.opt').forEach(b => {
+        b.onclick = () => {
+          $('s4body').querySelectorAll('.opt').forEach(x => x.classList.remove('sel'));
+          b.classList.add('sel');
+          state.match = b.dataset.m;
+          $('manual').value = '';
+          render();
+        };
+      });
+      $('manual').oninput = e => {
+        $('s4body').querySelectorAll('.opt').forEach(x => x.classList.remove('sel'));
+        state.match = e.target.value.trim();
+        render();
+      };
+    } catch (e) { fail('s4body', e); }
+  }
+
+  // ── 5. Result ───────────────────────────────────────────────────
+  function render() {
+    if (!state.token || !state.conn) return;
+    step(5, 'on');
+    const c = state.conn;
+    const env = [
+      `PLEX_HOST=${c.address}`,
+      `PLEX_PORT=${c.port}`,
+      c.https ? 'PLEX_HTTPS=1' : null,
+      `PLEX_TOKEN=${state.token}`,
+      `PLEX_SECTIONS=${state.libs.join(',') || '1'}`,
+      `PLEX_CLIENT_MATCH=${state.match}`,
+    ].filter(Boolean).join('\n');
+
+    $('s5body').innerHTML = `
+      <pre id="out">${esc(env)}</pre>
+      <div class="row" style="margin-top:.7rem">
+        <button id="copy">Copy</button>
+        <button class="ghost" id="dl">Download as .env</button>
+      </div>
+      <div class="warn">
+        <b>This is a password.</b> Anyone with this token can read your Plex
+        library. Put it in <code>/etc/bijou.env</code> (chmod 600) or your
+        Docker <code>.env</code>, and don't commit it. You can revoke it any
+        time from plex.tv under Authorised Devices.
+      </div>
+      <p class="hint">Then restart Bijou:
+         <code>sudo systemctl restart bijou</code> or
+         <code>docker compose up -d</code>.</p>`;
+
+    $('copy').onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(env);
+        $('copy').textContent = 'Copied';
+        setTimeout(() => ($('copy').textContent = 'Copy'), 1500);
+      } catch {
+        // Clipboard needs https or localhost; select the text instead
+        const r = document.createRange();
+        r.selectNodeContents($('out'));
+        getSelection().removeAllRanges();
+        getSelection().addRange(r);
+        $('copy').textContent = 'Press ⌘/Ctrl+C';
+      }
+    };
+    $('dl').onclick = () => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([env + '\n'], { type: 'text/plain' }));
+      a.download = 'bijou.env';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    };
+  }
+
+  const esc = t => String(t ?? '').replace(/[&<>"']/g,
+    c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+  function fail(where, e) {
+    $(where).innerHTML = `<p class="err">${esc(e.message || e)}</p>`;
+  }
+})();
+</script>
+</body>
+</html>

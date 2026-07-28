@@ -1,0 +1,37 @@
+[Unit]
+Description=Bijou display server
+Documentation=https://github.com/OWNER/bijou
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=bijou
+Group=bijou
+WorkingDirectory=/opt/bijou
+EnvironmentFile=/etc/bijou.env
+ExecStart=/usr/bin/python3 /opt/bijou/bijou.py
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+MemoryMax=256M
+
+# Nothing is written to disk; the poster cache lives in memory.
+ProtectProc=invisible
+ReadWritePaths=
+
+[Install]
+WantedBy=multi-user.target

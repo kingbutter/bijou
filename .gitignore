@@ -1,0 +1,21 @@
+# Never commit these — they hold your Plex token
+.env
+poster.env
+*.env
+!*.env.example
+
+__pycache__/
+*.py[cod]
+.venv/
+
+# Self-hosted webfonts are licensed separately; fetch them locally
+app/static/fonts/*.woff2
+
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+.ruff_cache/
+
+.ruff_cache/
