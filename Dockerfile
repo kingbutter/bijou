@@ -2,7 +2,7 @@
 
 # There is nothing to build. The app is one stdlib-only Python file, so the
 # image is just the runtime plus the source — no pip, no wheels, no compiler.
-FROM python:3.13-alpine
+FROM python:3.14-alpine
 
 LABEL org.opencontainers.image.title="Bijou" \
       org.opencontainers.image.description="Illuminated Plex movie poster display" \
