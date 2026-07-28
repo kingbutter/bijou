@@ -1,0 +1,6 @@
+# Normalise line endings so a checkout on Windows doesn't fail CI.
+* text=auto eol=lf
+
+*.png binary
+*.woff2 binary
+*.tgz binary

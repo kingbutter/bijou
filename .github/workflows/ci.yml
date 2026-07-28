@@ -21,9 +21,9 @@ jobs:
         # ships 3.11 and Debian 13 ships 3.13. 3.9 is end-of-life.
         python: ["3.10", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
 
@@ -60,12 +60,34 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - run: pip install ruff
       - run: ruff check app tests
+      - name: Every tracked text file ends with a newline
+        run: |
+          python3 - <<'PY'
+          import pathlib, subprocess, sys
+          # git ls-files, so caches and untracked scratch files are skipped
+          tracked = subprocess.run(["git", "ls-files", "-z"], capture_output=True,
+                                   check=True).stdout.split(b"\0")
+          bad = []
+          for name in filter(None, tracked):
+              p = pathlib.Path(name.decode())
+              if not p.is_file() or p.suffix in (".png", ".woff2", ".tgz"):
+                  continue
+              data = p.read_bytes()
+              if data and not data.endswith(b"\n"):
+                  bad.append(str(p))
+          if bad:
+              print("missing trailing newline:", *bad, sep="\n  ")
+              print("\nfix with: ruff check --fix app tests")
+              sys.exit(1)
+          print(f"all {len(tracked)} tracked files end with a newline")
+          PY
+
       - name: Shellcheck the deploy scripts
         run: |
           sudo apt-get update && sudo apt-get install -y shellcheck
@@ -74,7 +96,7 @@ jobs:
   secrets:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
       - name: Make sure no Plex token got committed
         run: |
           # Plex tokens are 20 chars of base64ish. Catch an assignment with a
@@ -93,7 +115,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
 
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4

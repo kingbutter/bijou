@@ -1,9 +1,19 @@
-"""A stand-in Plex server, just real enough to test against."""
+"""
+A stand-in Plex server, just real enough to test against.
+
+Bumped whenever the tests need a new endpoint or fixture. FAKE_VERSION is
+checked by the suite, so a stale copy of this file reports itself rather than
+producing a scatter of unrelated assertion failures.
+"""
 
 import json
 import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+# Bumped whenever the fixtures change; the suite refuses to run against an
+# older copy rather than producing a scatter of unrelated failures.
+FAKE_VERSION = 2
 
 TOKEN = "test-token"
 
@@ -89,7 +99,12 @@ class FakePlexTv:
                         return self.send_error(401)
                     return self._json([
                         {"name": "Basement", "provides": "server", "owned": True,
+                         "clientIdentifier": "basement-machine-id",
                          "connections": [
+                             # Plex in Docker advertises its bridge IP and
+                             # flags it local, but nothing else can reach it.
+                             {"protocol": "http", "address": "172.17.0.2",
+                              "port": 32400, "local": True, "relay": False},
                              {"protocol": "https", "address": "1.2.3.4",
                               "port": 32400, "local": False, "relay": False},
                              {"protocol": "http", "address": "127.0.0.1",
@@ -150,6 +165,10 @@ class FakePlex:
                 u = urllib.parse.urlparse(self.path)
                 q = urllib.parse.parse_qs(u.query)
                 outer.requests.append((u.path, q))
+
+                if u.path == "/identity":
+                    return self._json({"machineIdentifier": "basement-machine-id",
+                                       "version": "1.41.0"})
 
                 if q.get("X-Plex-Token") != [TOKEN]:
                     return self.send_error(401, "no token")

@@ -25,7 +25,7 @@ It's all CSS. Nothing is composited server-side and there are no frame images.
 ## Requirements
 
 - A Plex Media Server
-- Python 3.9 or newer — **that's the entire dependency list**, or Docker if
+- Python 3.10 or newer — **that's the entire dependency list**, or Docker if
   you'd rather not install anything at all
 
 No pip, no venv, no nginx, no PHP, no build step.
@@ -77,6 +77,14 @@ sandbox intact. Set `BIJOU_SETUP=0` to remove the page once you're configured.
 | `PLEX_CLIENT_MATCH` | The IP or name of the player by the display. Leave empty to react to any playback. |
 
 </details>
+
+**If Plex runs in Docker.** Plex advertises whatever addresses it can see on
+itself, which inside a container means the bridge IP (`172.17.0.x`) — flagged
+"local" but unreachable from anywhere else. `/setup` tests every advertised
+address from the machine Bijou is on and labels each one, so just pick a
+`reachable` row, or type your server's LAN address into the box. Setting
+**Settings → Network → Custom server access URLs** in Plex fixes it at the
+source and is worth doing regardless.
 
 **A note on picking the player.** Plex has no reliable "list every client"
 endpoint — `/clients` only returns players that announce themselves over GDM

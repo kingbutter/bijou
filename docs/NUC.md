@@ -26,7 +26,7 @@ enough to go the other way.
 sudo apt update && sudo apt install --no-install-recommends -y python3 curl ca-certificates
 ```
 
-That's the entire dependency list. The code needs Python 3.9 or newer and
+That's the entire dependency list. The code needs Python 3.10 or newer and
 trixie ships 3.13; `ca-certificates` is only needed so the `/setup` helper can
 reach plex.tv over HTTPS.
 

@@ -21,7 +21,16 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))                 # fake_plex
 sys.path.insert(0, str(HERE.parent / "app"))  # bijou
 
+import fake_plex  # noqa: E402
 from fake_plex import TOKEN, FakePlex, FakePlexTv  # noqa: E402
+
+# Bump alongside FAKE_VERSION in fake_plex.py whenever the fixtures change.
+REQUIRED_FAKE = 2
+if getattr(fake_plex, "FAKE_VERSION", 0) < REQUIRED_FAKE:
+    raise SystemExit(
+        f"tests/fake_plex.py is out of date: this suite needs version "
+        f"{REQUIRED_FAKE}, found {getattr(fake_plex, 'FAKE_VERSION', 'none')}. "
+        f"Update the whole tests/ directory, not just test_bijou.py.")
 
 
 def free_port():
